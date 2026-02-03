@@ -1,0 +1,13 @@
+[Unit]
+Description=Galaxy Protocol Health Check
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/zephyr/projects/galaxy-protocol
+ExecStart=/home/zephyr/projects/galaxy-protocol/tools/galaxy/health-check.sh
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,14 @@
+[Unit]
+Description=Hermes — Galaxy Order Dispatcher
+After=network.target opencode-serve.service
+Wants=opencode-serve.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/zephyr/projects/galaxy-protocol
+ExecStart=/usr/bin/python3 /home/zephyr/projects/galaxy-protocol/tools/galaxy/hermes.py --interval 30
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

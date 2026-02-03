@@ -1,0 +1,20 @@
+[Unit]
+Description=OpenCode Serve (Galaxy Protocol Backend)
+After=network.target
+
+[Service]
+Type=simple
+# CUSTOMIZE: Change WorkingDirectory for your setup
+# Note: User= is not needed for user systemd services
+WorkingDirectory=/home/zephyr/projects/galaxy-protocol
+ExecStart=/home/zephyr/.opencode/bin/opencode serve --port 4096 --hostname 127.0.0.1 --print-logs
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Galaxy MCP and agent execution depend on this service
+# Must be running before galaxy-mcp.service starts
+
+[Install]
+WantedBy=multi-user.target

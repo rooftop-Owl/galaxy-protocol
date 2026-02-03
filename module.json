@@ -1,0 +1,33 @@
+{
+  "name": "galaxy-protocol",
+  "version": "0.3.0",
+  "description": "Remote control for astraeus — Telegram bot, order dispatch, persistent sessions, GitHub star management",
+  "homepage": "https://github.com/rooftop-Owl/galaxy-protocol",
+  "provides": {
+    "agents": [
+      "star-curator"
+    ],
+    "commands": [
+      "galaxy-standby",
+      "stars"
+    ],
+    "rules": [
+      "galaxy-orders"
+    ],
+    "tools": [
+      "bot.py",
+      "hermes.py",
+      "galaxy_mcp.py"
+    ],
+    "docs": [
+      "galaxy-protocol-guide",
+      "galaxy-production-deployment"
+    ]
+  },
+  "identity": "MODULE_CONTEXT.md",
+  "requires": {
+    "astraeus": ">=0.3.0",
+    "oh-my-opencode": ">=3.0.0",
+    "@opencode-ai/plugin": ">=1.1.48"
+  }
+}

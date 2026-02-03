@@ -1,0 +1,11 @@
+[Unit]
+Description=Galaxy Protocol Health Check Timer
+Requires=galaxy-health-check.service
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

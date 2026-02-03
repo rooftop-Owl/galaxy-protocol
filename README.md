@@ -1,81 +1,53 @@
-# galaxy-backend
+# Galaxy Protocol
 
-## GPU Cluster Extension for astraeus
+> Remote control for [astraeus](https://github.com/rooftop-Owl/astraeus) — send orders from anywhere, get agent responses back.
 
-This repository contains documentation and tooling for extending astraeus capabilities with GPU cluster support for ollama-based profiles.
+## What It Does
 
-### Quick Start
+Send a text message on Telegram → astraeus agent processes it → response sent back to Telegram.
 
-```bash
-# Local GPU setup (single node)
-./setup-ollama-cluster.sh
+Persistent sessions mean the agent remembers your conversation. Zero cost when idle.
 
-# Remote GPU cluster setup
-./setup-ollama-cluster.sh --remote-host gpu-cluster-node
-
-# Verify setup
-opencode /local-smoke
-```
-
-### Documentation
-
-- **[GPU_CLUSTER_SETUP.md](docs/GPU_CLUSTER_SETUP.md)** — Comprehensive guide for:
-  - Hardware requirements (GPU, RAM, disk)
-  - Software stack (NVIDIA drivers, ollama, models)
-  - Deployment architectures (single-node, remote, Kubernetes)
-  - Performance tuning and cost analysis
-  - Troubleshooting common issues
-
-### What This Enables
-
-astraeus has two ollama profiles that leverage local GPUs for **60-80% cost savings**:
-
-| Profile | Target | Strategy |
-|---------|--------|----------|
-| **Hybrid-Cloud-Ollama** | Budget + GPU | GPT-5.2 + GPT-4o + Ollama (volume) |
-| **Hybrid-Claude-Ollama** | Claude MAX + GPU | Claude Opus/Sonnet + Ollama (volume) |
-
-**Volume tasks run locally** (FREE):
-- Codebase exploration (`explore` agent)
-- Build/type error fixes (`build-error-resolver`)
-- Documentation generation (`document-writer`, `doc-updater`)
-- Dead code cleanup (`refactor-cleaner`)
-- Journal keeping (`journalist`)
-
-**Quality-critical tasks stay in cloud**:
-- Test-driven development (`tdd-guide`)
-- Code review (`code-reviewer`)
-- Security auditing (`security-reviewer`)
-- Deep reasoning (`oracle`, `architect`)
-
-### Requirements
-
-- **GPU**: NVIDIA with 8GB+ VRAM (16GB+ recommended)
-- **RAM**: 16GB+ (32GB+ recommended)
-- **Disk**: 50GB+ free space
-- **OS**: Ubuntu 22.04+ or compatible Linux
-
-### Models Used
-
-Three ollama models (total ~30-40GB):
-1. **ministral-3:14b-32k** — Fast exploration, 32K context
-2. **qwen3-coder-32k** — Code-specialized, 32K context
-3. **lfm2.5-thinking** — Documentation/writing
-
-### Git Repository
-
-This is a **separate git repository** inside the main astraeus project.
+## Setup
 
 ```bash
-# Commit changes inside galaxy-backend
-cd galaxy-backend
-git add docs/ setup-ollama-cluster.sh README.md
-git commit -m "Add GPU cluster setup documentation"
-git push origin main
+# 1. Load into your astraeus project
+astraeus load galaxy-protocol
 
-# Changes here do NOT affect parent astraeus repo
+# 2. Create bot via @BotFather on Telegram
+# 3. Configure
+cp galaxy-protocol/tools/config.json.example .galaxy/config.json
+# Edit with your telegram_token and authorized_users
+
+# 4. Install deps
+pip install -r galaxy-protocol/tools/requirements.txt
+
+# 5. Run
+python3 galaxy-protocol/tools/bot.py &
+python3 galaxy-protocol/tools/hermes.py --interval 5 &
 ```
 
----
+## Architecture
 
-**Parent Project**: [astraeus](../) — Deploy AI agent teams to any project
+```
+Phone → Telegram → bot.py → order file → Hermes → opencode run → response → Telegram
+```
+
+## Components
+
+| Component | Description |
+|-----------|-------------|
+| `tools/bot.py` | Telegram bot (any text = order) |
+| `tools/hermes.py` | Order dispatcher (5s polling, 3min timeout, persistent sessions) |
+| `tools/galaxy_mcp.py` | MCP server for programmatic access |
+| `services/` | systemd units for production deployment |
+
+## Requirements
+
+- astraeus >= 0.3.0
+- Python 3.10+
+- `python-telegram-bot` (see requirements.txt)
+
+## License
+
+Same as astraeus.

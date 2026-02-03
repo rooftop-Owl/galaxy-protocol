@@ -1,0 +1,16 @@
+[Unit]
+Description=Galaxy Protocol Monitoring Dashboard
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/zephyr/projects/galaxy-protocol
+ExecStart=/usr/bin/python3 tools/galaxy/dashboard.py
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

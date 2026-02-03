@@ -1,0 +1,20 @@
+[Unit]
+Description=Galaxy MCP Server (Phase C)
+After=network.target
+
+[Service]
+Type=simple
+# CUSTOMIZE: Change WorkingDirectory for your setup
+# Note: User= is not needed for user systemd services
+WorkingDirectory=/home/zephyr/projects/galaxy-protocol
+ExecStart=/usr/bin/python3 tools/galaxy/galaxy_mcp.py
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+# Galaxy MCP requires opencode serve to be running
+# Start it manually: opencode serve --port 4096
+# Or create a separate systemd service for it
+
+[Install]
+WantedBy=multi-user.target

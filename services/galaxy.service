@@ -1,0 +1,16 @@
+[Unit]
+Description=Galaxy-gazer Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+# CUSTOMIZE: Change WorkingDirectory for your setup
+# Note: User= is not needed for user systemd services
+WorkingDirectory=/home/zephyr/projects/galaxy-protocol
+ExecStart=/usr/bin/python3 tools/galaxy/bot.py
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,374 @@
+{
+  "lists": {
+    "\ud83d\udcb8 No cost AI": {
+      "slug": "no-cost-ai",
+      "keywords": [
+        "free",
+        "open-source",
+        "self-hosted",
+        "no-cost"
+      ]
+    },
+    "\ud83d\udd10 Security": {
+      "slug": "security",
+      "keywords": [
+        "security",
+        "auth",
+        "encryption",
+        "vulnerability",
+        "pentest"
+      ]
+    },
+    "\ud83d\udcf1 On-device AI": {
+      "slug": "on-device-ai",
+      "keywords": [
+        "on-device",
+        "edge",
+        "local",
+        "mobile",
+        "embedded",
+        "sandbox"
+      ]
+    },
+    "\u2728 Inspiration": {
+      "slug": "inspiration",
+      "keywords": [
+        "creative",
+        "novel",
+        "experimental",
+        "philosophy"
+      ]
+    },
+    "\u2328\ufe0f Agents & Vibe Coding": {
+      "slug": "agents-vibe-coding",
+      "keywords": [
+        "agent",
+        "orchestration",
+        "multi-agent",
+        "agentic",
+        "vibe-coding"
+      ]
+    },
+    "\ud83d\udd36 Claude": {
+      "slug": "claude",
+      "keywords": [
+        "claude",
+        "anthropic",
+        "claude-code",
+        "skill",
+        "mcp"
+      ]
+    },
+    "Python": {
+      "slug": "python",
+      "keywords": [
+        "python",
+        "pip",
+        "numpy",
+        "pandas",
+        "scipy"
+      ]
+    },
+    ":atom: Antigravity": {
+      "slug": "antigravity",
+      "keywords": [
+        "antigravity",
+        "opencode"
+      ]
+    },
+    "\ud83c\udf93 Road2PhD": {
+      "slug": "road2phd",
+      "keywords": [
+        "academic",
+        "research",
+        "paper",
+        "phd",
+        "university",
+        "textbook"
+      ]
+    },
+    "\ud83c\udfae Game Streaming": {
+      "slug": "game-streaming",
+      "keywords": [
+        "game",
+        "streaming",
+        "moonlight",
+        "sunshine",
+        "gamepad"
+      ]
+    },
+    "\ud83e\udde0 AI Memory & RAG": {
+      "slug": "ai-memory-rag",
+      "keywords": [
+        "memory",
+        "rag",
+        "retrieval",
+        "knowledge-graph",
+        "embedding",
+        "vector"
+      ]
+    },
+    "\ud83d\udcd6 Guides & Learning": {
+      "slug": "guides-learning",
+      "keywords": [
+        "guide",
+        "tutorial",
+        "handbook",
+        "awesome",
+        "learning",
+        "book"
+      ]
+    },
+    "\ud83d\udd27 Dev Tools": {
+      "slug": "dev-tools",
+      "keywords": [
+        "tool",
+        "ocr",
+        "utility",
+        "devtool",
+        "cli"
+      ]
+    },
+    "\ud83c\uddf0\ud83c\uddf7 Korean Tools": {
+      "slug": "korean-tools",
+      "keywords": [
+        "korean",
+        "kakaotalk",
+        "hwp",
+        "hangul"
+      ]
+    },
+    "\ud83c\udf26\ufe0f Atmospheric Science": {
+      "slug": "atmospheric-science",
+      "keywords": [
+        "weather",
+        "atmospheric",
+        "wrf",
+        "dart",
+        "meteorology",
+        "climate"
+      ]
+    }
+  },
+  "repos": {
+    "BumgeunSong/skill-up": [
+      "\ud83d\udd36 Claude",
+      "\ud83c\uddf0\ud83c\uddf7 Korean Tools"
+    ],
+    "ClassicOldSong/Apollo": [
+      "\ud83c\udfae Game Streaming"
+    ],
+    "DayuanJiang/next-ai-draw-io": [
+      "\ud83d\udd27 Dev Tools"
+    ],
+    "FilippoMB/python-time-series-handbook": [
+      "\ud83c\udf26\ufe0f Atmospheric Science",
+      "Python",
+      "\ud83c\udf93 Road2PhD"
+    ],
+    "GiovanniPasq/agentic-rag-for-dummies": [
+      "\ud83e\udde0 AI Memory & RAG",
+      "\ud83d\udcd6 Guides & Learning"
+    ],
+    "HKUDS/DeepTutor": [
+      "\ud83e\udde0 AI Memory & RAG",
+      "\ud83c\udf93 Road2PhD"
+    ],
+    "HariFatherKR/channel-talk-skills": [
+      "\ud83c\uddf0\ud83c\uddf7 Korean Tools"
+    ],
+    "HathewayWill/WRF_Python_Scripts": [
+      "\ud83c\udf26\ufe0f Atmospheric Science",
+      "Python"
+    ],
+    "K-Dense-AI/claude-scientific-skills": [
+      "\ud83d\udd36 Claude",
+      "\ud83c\udf93 Road2PhD"
+    ],
+    "LizardByte/Sunshine": [
+      "\ud83c\udfae Game Streaming"
+    ],
+    "Metatransformer/agentguard": [
+      "\ud83d\udd10 Security"
+    ],
+    "NCAR/DART": [
+      "\ud83c\udf26\ufe0f Atmospheric Science",
+      "\ud83c\udf93 Road2PhD"
+    ],
+    "NoeFabris/opencode-antigravity-auth": [
+      "\ud83d\udd27 Dev Tools",
+      ":atom: Antigravity"
+    ],
+    "PleasePrompto/notebooklm-mcp": [
+      "\ud83e\udde0 AI Memory & RAG",
+      "\ud83d\udd36 Claude"
+    ],
+    "VectifyAI/PageIndex": [
+      "\ud83e\udde0 AI Memory & RAG",
+      "\u2728 Inspiration"
+    ],
+    "Yeachan-Heo/oh-my-claudecode": [
+      "\u2328\ufe0f Agents & Vibe Coding",
+      "\ud83d\udd36 Claude"
+    ],
+    "affaan-m/everything-claude-code": [
+      "\ud83d\udd36 Claude",
+      "\u2328\ufe0f Agents & Vibe Coding"
+    ],
+    "agentscope-ai/agentscope": [
+      "\u2328\ufe0f Agents & Vibe Coding"
+    ],
+    "anomalyco/opencode": [
+      "\u2328\ufe0f Agents & Vibe Coding"
+    ],
+    "anthropics/claude-code": [
+      "\u2328\ufe0f Agents & Vibe Coding",
+      "\ud83d\udd36 Claude"
+    ],
+    "ashishpatel26/500-AI-Agents-Projects": [
+      "\ud83d\udcd6 Guides & Learning",
+      "\u2728 Inspiration"
+    ],
+    "blader/humanizer": [
+      "\ud83d\udd36 Claude",
+      "\u2728 Inspiration"
+    ],
+    "chatdoc-com/OCRFlux": [
+      "\ud83d\udd27 Dev Tools",
+      "\ud83c\udf93 Road2PhD"
+    ],
+    "cloudflare/moltworker": [
+      "\u2328\ufe0f Agents & Vibe Coding",
+      "\ud83d\udcf1 On-device AI"
+    ],
+    "code-yeongyu/oh-my-opencode": [
+      "\u2328\ufe0f Agents & Vibe Coding",
+      "\ud83d\udd36 Claude"
+    ],
+    "codeproject/CodeProject.AI-Server": [
+      "\ud83d\udcb8 No cost AI",
+      "\ud83d\udcf1 On-device AI"
+    ],
+    "dair-ai/Prompt-Engineering-Guide": [
+      "\ud83d\udcd6 Guides & Learning",
+      "\u2328\ufe0f Agents & Vibe Coding"
+    ],
+    "daymade/claude-code-skills": [
+      "\ud83d\udd36 Claude"
+    ],
+    "dev-whitecrow/Philosophy_AI": [
+      "\u2728 Inspiration",
+      "\u2328\ufe0f Agents & Vibe Coding"
+    ],
+    "github/awesome-copilot": [
+      "\ud83d\udcd6 Guides & Learning"
+    ],
+    "google/langextract": [
+      "\ud83d\udd27 Dev Tools",
+      "Python",
+      "\ud83e\udde0 AI Memory & RAG"
+    ],
+    "gyunggyung/LFM-Scholar": [
+      "\ud83c\udf93 Road2PhD",
+      "\ud83d\udcb8 No cost AI"
+    ],
+    "gyunggyung/Tiny-MoA": [
+      "\ud83d\udcb8 No cost AI",
+      "\ud83d\udcf1 On-device AI"
+    ],
+    "harvard-edge/cs249r_book": [
+      "\ud83d\udcd6 Guides & Learning",
+      "\ud83c\udf93 Road2PhD"
+    ],
+    "jarrodwatts/claude-hud": [
+      "\ud83d\udd36 Claude"
+    ],
+    "jkf87/hwp-mcp": [
+      "\ud83c\uddf0\ud83c\uddf7 Korean Tools"
+    ],
+    "jongwony/epistemic-protocols": [
+      "\ud83d\udd36 Claude",
+      "\u2728 Inspiration"
+    ],
+    "kubony/claude-promote": [
+      "\ud83d\udd36 Claude"
+    ],
+    "langgenius/dify": [
+      "\u2328\ufe0f Agents & Vibe Coding"
+    ],
+    "lbjlaq/Antigravity-Manager": [
+      "\ud83d\udd27 Dev Tools",
+      ":atom: Antigravity"
+    ],
+    "memvid/memvid": [
+      "\ud83e\udde0 AI Memory & RAG",
+      "\u2328\ufe0f Agents & Vibe Coding"
+    ],
+    "moonlight-stream/moonlight-qt": [
+      "\ud83c\udfae Game Streaming"
+    ],
+    "nextlevelbuilder/ui-ux-pro-max-skill": [
+      "\ud83d\udd36 Claude"
+    ],
+    "obra/superpowers": [
+      "\u2328\ufe0f Agents & Vibe Coding",
+      "\ud83d\udd36 Claude",
+      "\u2728 Inspiration"
+    ],
+    "oxbshw/LLM-Agents-Ecosystem-Handbook": [
+      "\ud83d\udcd6 Guides & Learning",
+      "\u2328\ufe0f Agents & Vibe Coding"
+    ],
+    "rednote-hilab/dots.ocr": [
+      "\ud83d\udd27 Dev Tools"
+    ],
+    "ruvnet/claude-flow": [
+      "\u2328\ufe0f Agents & Vibe Coding",
+      "\ud83d\udd36 Claude"
+    ],
+    "sickn33/antigravity-awesome-skills": [
+      "\ud83d\udd36 Claude",
+      ":atom: Antigravity"
+    ],
+    "snarktank/ralph": [
+      "\u2328\ufe0f Agents & Vibe Coding",
+      "\ud83d\udd36 Claude"
+    ],
+    "team-attention/plugins-for-claude-natives": [
+      "\ud83d\udd36 Claude"
+    ],
+    "thedotmack/claude-mem": [
+      "\ud83d\udd36 Claude",
+      "\ud83e\udde0 AI Memory & RAG"
+    ],
+    "tobi/qmd": [
+      "\ud83e\udde0 AI Memory & RAG",
+      "\ud83d\udcb8 No cost AI"
+    ],
+    "topoteretes/cognee": [
+      "\ud83e\udde0 AI Memory & RAG",
+      "\u2328\ufe0f Agents & Vibe Coding"
+    ],
+    "tornado1014/clawdbot-kakaotalk": [
+      "\ud83c\uddf0\ud83c\uddf7 Korean Tools",
+      "\ud83d\udcf1 On-device AI"
+    ],
+    "vercel-labs/agent-browser": [
+      "\u2328\ufe0f Agents & Vibe Coding",
+      "\ud83d\udd27 Dev Tools"
+    ],
+    "vercel-labs/agent-skills": [
+      "\ud83d\udd36 Claude",
+      "\u2328\ufe0f Agents & Vibe Coding"
+    ],
+    "wshobson/agents": [
+      "\u2328\ufe0f Agents & Vibe Coding",
+      "\ud83d\udd36 Claude"
+    ],
+    "zerocore-ai/microsandbox": [
+      "\ud83d\udd27 Dev Tools",
+      "\ud83d\udcf1 On-device AI",
+      "\ud83d\udd10 Security"
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "ntfy_topic": "astraeus-CHANGE-ME-use-openssl-rand-hex-6",
+  "ntfy_server": "https://ntfy.sh",
+  "ntfy_fallback": true,
+  "telegram_token": "CHANGE-ME-get-from-BotFather",
+  "authorized_users": [123456789],
+  "poll_interval": 60,
+  "default_machine": "lab-server",
+  "machines": {
+    "lab-server": {
+      "host": "localhost",
+      "repo_path": "/absolute/path/to/astraeus",
+      "machine_name": "lab-server"
+    }
+  }
+}
