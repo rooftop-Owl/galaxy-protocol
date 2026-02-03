@@ -49,8 +49,9 @@ class TelegramChannel(BaseChannel):
         poll_interval (int): Polling interval in seconds (default: 30)
     """
 
-    def __init__(self, config: Dict[str, Any], bus: MessageBus):
+    def __init__(self, config: Dict[str, Any], bus: MessageBus, user_store=None):
         super().__init__(config, bus)
+        self.user_store = user_store
 
         self.token = config["telegram_token"]
         self.authorized: Set[int] = set(config.get("authorized_users", []))
@@ -64,6 +65,24 @@ class TelegramChannel(BaseChannel):
         self.pending_orders: Dict[str, Dict] = {}
 
         self.app = None
+
+    def resolve_user_identity(self, update) -> tuple:
+        """Resolve Telegram user to (sender_id, chat_id, user_id).
+
+        Returns unified user_id if linked, otherwise raw Telegram IDs.
+        """
+        if not self.user_store:
+            telegram_id = update.effective_user.id
+            chat_id = update.effective_chat.id
+            return str(telegram_id), str(chat_id), ""
+
+        telegram_id = update.effective_user.id
+        user = self.user_store.get_by_telegram_id(telegram_id)
+
+        if user:
+            return user.id, user.id, user.id
+        else:
+            return str(telegram_id), str(update.effective_chat.id), ""
 
     # --- MACHINE REGISTRY ---
 
@@ -312,11 +331,13 @@ class TelegramChannel(BaseChannel):
             await update.message.reply_text(f"\U0001f4e1 \u2192 *{name}*", parse_mode="Markdown")
 
         # Also publish to MessageBus for gateway routing
+        sender_id, chat_id, user_id = self.resolve_user_identity(update)
         await self._handle_message(
-            sender_id=str(update.effective_user.id),
-            chat_id=str(update.effective_chat.id),
+            sender_id=sender_id,
+            chat_id=chat_id,
             content=order_text,
             metadata={"source": "telegram", "machine": name},
+            user_id=user_id,
         )
 
     async def cmd_status(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):

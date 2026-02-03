@@ -1,3 +1,5 @@
 python-telegram-bot>=20.0,<22.0
 fastmcp>=0.1.0
 flask>=3.0.0
+bcrypt>=4.0.0
+PyJWT>=2.8.0

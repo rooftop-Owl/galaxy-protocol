@@ -24,6 +24,7 @@ from pathlib import Path
 # Ensure caduceus package is importable
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from caduceus.auth.store import UserStore
 from caduceus.bus import MessageBus
 from caduceus.channels.telegram import TelegramChannel
 from caduceus.channels.web import WebChannel
@@ -112,16 +113,26 @@ def build_channels(config: dict, bus: MessageBus) -> dict:
     """
     channels = {}
 
-    # Telegram channel: enabled if telegram_token is present and valid
+    auth_config = config.get("auth", {})
+    jwt_secret = auth_config.get("jwt_secret", "")
+    if not jwt_secret:
+        logger.warning("auth.jwt_secret not configured — web authentication will not work")
+
+    user_store = UserStore(
+        db_path=auth_config.get("db_path", ".galaxy/users.db"),
+        jwt_secret=jwt_secret,
+        token_expiry_hours=auth_config.get("token_expiry_hours", 24),
+    )
+    logger.info(f"UserStore initialized: {auth_config.get('db_path', '.galaxy/users.db')}")
+
     token = config.get("telegram_token", "")
     if token and "CHANGE-ME" not in token:
-        channels["telegram"] = TelegramChannel(config, bus)
+        channels["telegram"] = TelegramChannel(config, bus, user_store)
         logger.info("Telegram channel enabled")
 
-    # Web channel: enabled if web config present with enabled=true
     web_config = config.get("web", {})
     if web_config.get("enabled", False):
-        channels["web"] = WebChannel(web_config, bus)
+        channels["web"] = WebChannel(web_config, bus, user_store)
         logger.info(f"Web channel enabled on port {web_config.get('port', 8080)}")
 
     return channels

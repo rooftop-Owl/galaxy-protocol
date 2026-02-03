@@ -12,5 +12,15 @@
       "repo_path": "/absolute/path/to/astraeus",
       "machine_name": "lab-server"
     }
+  },
+  "auth": {
+    "db_path": ".galaxy/users.db",
+    "jwt_secret": "CHANGE-ME-GENERATE-RANDOM-SECRET-openssl-rand-base64-32",
+    "token_expiry_hours": 24
+  },
+  "web": {
+    "enabled": true,
+    "port": 8080,
+    "authorized_users": [123456789]
   }
 }
