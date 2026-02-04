@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import unicodedata
 from datetime import datetime, timezone
@@ -10,6 +11,48 @@ from urllib.parse import urlparse
 
 import trafilatura
 from newspaper import Article
+
+logger = logging.getLogger(__name__)
+
+# Stopwords for tag filtering (noise reduction)
+STOPWORDS = {
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "but",
+    "in",
+    "on",
+    "at",
+    "to",
+    "for",
+    "of",
+    "with",
+    "by",
+    "from",
+    "as",
+    "is",
+    "was",
+    "are",
+    "were",
+    "be",
+    "x",
+    "y",
+    "z",
+    "i",
+    "j",
+    "k",
+    "foo",
+    "bar",
+    "baz",
+    "test",
+    "example",
+    "sample",
+    "var",
+    "tmp",
+    "temp",
+}
 
 
 def _to_ascii(value: str) -> str:
@@ -74,6 +117,34 @@ def _select_key_insights(extracted_text: str, fallback_summary: str) -> list[str
     if fallback_summary:
         return [fallback_summary]
     return ["Extracted content is available for review."]
+
+
+def _validate_index(index_path: Path) -> bool:
+    """Validate index.json integrity.
+
+    Returns True if valid, False if corrupted.
+    JSON degrades catastrophically - one missing comma breaks the entire file.
+    """
+    try:
+        data = json.loads(index_path.read_text(encoding="utf-8"))
+        assert isinstance(data.get("references"), list), "references must be a list"
+        for ref in data["references"]:
+            required = [
+                "slug",
+                "url",
+                "title",
+                "file",
+                "type",
+                "tags",
+                "shared_at",
+                "shared_via",
+            ]
+            missing = [k for k in required if k not in ref]
+            assert not missing, f"missing required fields: {missing}"
+        return True
+    except (json.JSONDecodeError, AssertionError, KeyError) as e:
+        logger.error(f"index.json validation failed: {e}")
+        return False
 
 
 def _ensure_index(index_path: Path) -> dict[str, Any]:
@@ -143,7 +214,12 @@ async def process_feed(
         tags: set[str] = set()
         for keyword in keywords:
             clean_keyword = _to_ascii(keyword.lower()).strip()
-            if clean_keyword:
+            # Filter: min 3 chars, not in stopwords
+            if (
+                clean_keyword
+                and len(clean_keyword) >= 3
+                and clean_keyword not in STOPWORDS
+            ):
                 tags.add(clean_keyword)
 
         type_tag = ref_type
@@ -159,7 +235,8 @@ async def process_feed(
         if "arxiv.org" in url.lower():
             tags.add("arxiv")
 
-        tag_list = sorted(tags)
+        # Cap at 15 tags to prevent explosion
+        tag_list = sorted(tags)[:15]
 
         timestamp = datetime.now(timezone.utc)
         date_prefix = timestamp.strftime("%Y-%m-%d")
@@ -212,7 +289,7 @@ async def process_feed(
         file_path = references_dir / file_name
         file_path.write_text("\n".join(markdown_lines), encoding="utf-8")
 
-        index_data = _ensure_index(index_path)
+        # Create index entry
         reference_entry = {
             "slug": slug,
             "url": url,
@@ -224,8 +301,28 @@ async def process_feed(
             "shared_via": via,
             "file": file_name,
         }
+
+        # Update index with validation
+        index_data = _ensure_index(index_path)
         index_data.setdefault("references", []).append(reference_entry)
+
+        # Write and validate immediately
         index_path.write_text(json.dumps(index_data, indent=2), encoding="utf-8")
+
+        if not _validate_index(index_path):
+            # Index corrupted - restore previous state if possible
+            logger.error(f"Index validation failed after adding {slug}")
+            # Remove the appended entry and rewrite
+            index_data["references"].pop()
+            index_path.write_text(json.dumps(index_data, indent=2), encoding="utf-8")
+            return {
+                "slug": slug,
+                "title": title_ascii or "Untitled",
+                "tags": tag_list,
+                "type": ref_type,
+                "file_path": str(file_path),
+                "warning": "Reference .md created but index update failed (validation error)",
+            }
 
         return {
             "slug": slug,
