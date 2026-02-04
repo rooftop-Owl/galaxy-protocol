@@ -124,6 +124,56 @@ sudo systemctl enable --now caduceus-gateway
 sudo systemctl status caduceus-gateway
 ```
 
+## Telegram Commands
+
+| Command | Purpose |
+| --- | --- |
+| `/status [machine|all]` | Machine status snapshot (git, tests, reports) |
+| `/concerns [machine|all]` | Latest Stargazer concerns |
+| `/order [machine|all] <msg>` | Send an order to a machine |
+| `/feed <url> [note]` | Capture external reference into the knowledge archive |
+| `/machines` | List registered machines |
+| `/help` | Show available commands |
+
+## Knowledge Archive (`/feed`)
+
+References are stored in `.sisyphus/references/` with a JSON index for fast lookup.
+
+```
+.sisyphus/references/
+├── index.json
+├── 2026-02-04-trafilatura-extraction.md
+└── ...
+```
+
+Each reference file uses the shared format:
+
+```markdown
+# Title
+
+**Source**: https://example.com
+**Type**: repo|article|paper|post|docs|tool
+**Ingested**: 2026-02-04T10:30:00Z
+**Tags**: extraction, python, scraping
+**Note**: optional note from user
+**Via**: telegram|tui
+
+---
+
+## Summary
+## Key Insights
+## Relevance to Our Work
+## Applicable Patterns
+```
+
+Tags are free-form. Do not enforce a rigid taxonomy.
+
+## Reference Discovery
+
+- Read `.sisyphus/references/index.json` for a quick catalog.
+- Grep `.sisyphus/references/*.md` when you need deeper context.
+- Use `/feed list` or `/feed list <tag>` in the TUI for recent lookups.
+
 ## Configuration
 
 Add to `.galaxy/config.json`:
