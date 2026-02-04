@@ -578,6 +578,7 @@ class TelegramChannel(BaseChannel):
             "🌌 *Galaxy-gazer Commands*\n\n"
             "`/status [machine|all]` — Machine status (git, tests, reports)\n"
             "`/concerns [machine|all]` — Latest Stargazer concerns\n"
+            "`/feed <url> [note]` — Ingest reference into knowledge archive\n"
             "`/order [machine|all] <msg>` — Send order to Stargazer\n"
             "`/machines` — List registered machines\n"
             "`/help` — This message\n\n"
