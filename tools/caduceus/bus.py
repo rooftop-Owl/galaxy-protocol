@@ -39,18 +39,17 @@ class InboundMessage:
     content: str
     media: List[Any] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    user_id: str = ""
 
     @property
     def session_key(self) -> str:
         """Generate session key for continuity tracking.
 
-        Combines channel and chat_id to produce a unique key that identifies
-        an ongoing conversation, enabling stateful interactions across
-        multiple messages.
-
-        Returns:
-            A string in the format ``"{channel}:{chat_id}"``.
+        If user_id is set (authenticated), use it for cross-channel continuity.
+        Otherwise fall back to channel-specific key.
         """
+        if self.user_id:
+            return self.user_id
         return f"{self.channel}:{self.chat_id}"
 
 

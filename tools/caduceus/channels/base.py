@@ -64,6 +64,7 @@ class BaseChannel(ABC):
         content: str,
         media: Optional[List[Any]] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        user_id: str = "",
     ) -> None:
         """Generic message handler - creates InboundMessage and publishes to bus.
 
@@ -84,5 +85,6 @@ class BaseChannel(ABC):
             content=content,
             media=media or [],
             metadata=metadata or {},
+            user_id=user_id,
         )
         await self.bus.publish_inbound(msg)

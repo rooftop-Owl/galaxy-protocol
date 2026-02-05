@@ -31,6 +31,7 @@ from telegram.ext import (
 
 from caduceus.channels.base import BaseChannel
 from caduceus.bus import MessageBus, OutboundMessage
+from caduceus.feed_processor import process_feed
 
 logger = logging.getLogger(__name__)
 
@@ -49,21 +50,38 @@ class TelegramChannel(BaseChannel):
         poll_interval (int): Polling interval in seconds (default: 30)
     """
 
-    def __init__(self, config: Dict[str, Any], bus: MessageBus):
+    def __init__(self, config: Dict[str, Any], bus: MessageBus, user_store=None):
         super().__init__(config, bus)
+        self.user_store = user_store
 
         self.token = config["telegram_token"]
         self.authorized: Set[int] = set(config.get("authorized_users", []))
         self.machines = self._load_machines(config)
-        self.default_machine = config.get(
-            "default_machine", next(iter(self.machines))
-        )
+        self.default_machine = config.get("default_machine", next(iter(self.machines)))
         self.poll_interval = config.get("poll_interval", 30)
 
         # Track pending orders for acknowledgment polling
         self.pending_orders: Dict[str, Dict] = {}
 
         self.app = None
+
+    def resolve_user_identity(self, update) -> tuple:
+        """Resolve Telegram user to (sender_id, chat_id, user_id).
+
+        Returns unified user_id if linked, otherwise raw Telegram IDs.
+        """
+        if not self.user_store:
+            telegram_id = update.effective_user.id
+            chat_id = update.effective_chat.id
+            return str(telegram_id), str(chat_id), ""
+
+        telegram_id = update.effective_user.id
+        user = self.user_store.get_by_telegram_id(telegram_id)
+
+        if user:
+            return user.id, user.id, user.id
+        else:
+            return str(telegram_id), str(update.effective_chat.id), ""
 
     # --- MACHINE REGISTRY ---
 
@@ -93,7 +111,9 @@ class TelegramChannel(BaseChannel):
             name: {
                 "host": "localhost",
                 "repo_path": Path(
-                    config.get("repo_path", str(Path(__file__).parent.parent.parent.parent))
+                    config.get(
+                        "repo_path", str(Path(__file__).parent.parent.parent.parent)
+                    )
                 ),
                 "machine_name": name,
             }
@@ -182,8 +202,11 @@ class TelegramChannel(BaseChannel):
         ssh_user = machine.get("ssh_user", "")
         target = f"{ssh_user}@{host}" if ssh_user else host
         ssh_cmd = [
-            "ssh", "-o", "ConnectTimeout=5", target,
-            f"cd {shlex.quote(str(repo))} && {' '.join(shlex.quote(c) for c in cmd)}"
+            "ssh",
+            "-o",
+            "ConnectTimeout=5",
+            target,
+            f"cd {shlex.quote(str(repo))} && {' '.join(shlex.quote(c) for c in cmd)}",
         ]
 
         result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=30)
@@ -194,12 +217,16 @@ class TelegramChannel(BaseChannel):
     def get_status_text(self, name: str, machine: Dict) -> str:
         """Build status text for a single machine."""
         try:
-            git_log, _, _ = self.run_on_machine(machine, ["git", "log", "--oneline", "-5"])
+            git_log, _, _ = self.run_on_machine(
+                machine, ["git", "log", "--oneline", "-5"]
+            )
         except Exception:
             git_log = "(git unavailable)"
 
         try:
-            git_status, _, _ = self.run_on_machine(machine, ["git", "status", "--short"])
+            git_status, _, _ = self.run_on_machine(
+                machine, ["git", "status", "--short"]
+            )
             git_status = git_status or "(clean)"
         except Exception:
             git_status = "(unknown)"
@@ -226,7 +253,9 @@ class TelegramChannel(BaseChannel):
                         latest = json.load(f)
                     critical = latest.get("critical_concerns", 0)
                     warnings = latest.get("warning_concerns", 0)
-                    report_summary += f"\nLatest: {critical} critical, {warnings} warnings"
+                    report_summary += (
+                        f"\nLatest: {critical} critical, {warnings} warnings"
+                    )
                 except Exception:
                     pass
 
@@ -262,13 +291,16 @@ class TelegramChannel(BaseChannel):
 
     # --- ORDER HELPERS ---
 
-    def create_order(self, machine_name: str, machine_config: Dict,
-                     order_text: str, chat_id: int) -> Optional[str]:
+    def create_order(
+        self, machine_name: str, machine_config: Dict, order_text: str, chat_id: int
+    ) -> Optional[str]:
         """Write an order JSON file. Returns the order file path or None."""
         if not self.is_local(machine_config):
             return None
 
-        orders_dir = machine_config["repo_path"] / ".sisyphus" / "notepads" / "galaxy-orders"
+        orders_dir = (
+            machine_config["repo_path"] / ".sisyphus" / "notepads" / "galaxy-orders"
+        )
         orders_dir.mkdir(parents=True, exist_ok=True)
 
         order = {
@@ -301,7 +333,9 @@ class TelegramChannel(BaseChannel):
 
         name = self.default_machine
         machine = self.machines[name]
-        order_file = self.create_order(name, machine, order_text, update.effective_chat.id)
+        order_file = self.create_order(
+            name, machine, order_text, update.effective_chat.id
+        )
 
         if order_file:
             self.pending_orders[order_file] = {
@@ -309,14 +343,18 @@ class TelegramChannel(BaseChannel):
                 "chat_id": update.effective_chat.id,
                 "order_text": order_text,
             }
-            await update.message.reply_text(f"\U0001f4e1 \u2192 *{name}*", parse_mode="Markdown")
+            await update.message.reply_text(
+                f"\U0001f4e1 \u2192 *{name}*", parse_mode="Markdown"
+            )
 
         # Also publish to MessageBus for gateway routing
+        sender_id, chat_id, user_id = self.resolve_user_identity(update)
         await self._handle_message(
-            sender_id=str(update.effective_user.id),
-            chat_id=str(update.effective_chat.id),
+            sender_id=sender_id,
+            chat_id=chat_id,
             content=order_text,
             metadata={"source": "telegram", "machine": name},
+            user_id=user_id,
         )
 
     async def cmd_status(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -394,6 +432,57 @@ class TelegramChannel(BaseChannel):
             await update.message.reply_text(msg, parse_mode="Markdown")
         except Exception:
             await update.message.reply_text(msg)
+
+    async def cmd_feed(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Ingest reference. Usage: /feed <url> [note]"""
+        if not self.is_authorized(update.effective_user.id):
+            return
+
+        if not ctx.args:
+            await update.message.reply_text(
+                "Usage: `/feed <url> [note]`\n"
+                "Example: `/feed https://github.com/adbar/trafilatura great tool`",
+                parse_mode="Markdown",
+            )
+            return
+
+        url = ctx.args[0]
+        if not re.match(r"^https?://", url):
+            await update.message.reply_text(
+                "❌ URL must start with http:// or https://"
+            )
+            return
+
+        note = " ".join(ctx.args[1:]).strip() if len(ctx.args) > 1 else None
+        if note == "":
+            note = None
+
+        await update.message.reply_text(f"📬 Received: {url}")
+        asyncio.create_task(self._process_feed(update.effective_chat.id, url, note))
+
+    async def _process_feed(self, chat_id: int, url: str, note: str | None):
+        if not self.app:
+            return
+
+        machine = self.machines.get(self.default_machine)
+        if not machine:
+            await self.app.bot.send_message(chat_id, "❌ Failed: no default machine")
+            return
+
+        references_dir = machine["repo_path"] / ".sisyphus" / "references"
+        result = await process_feed(url, note, "telegram", references_dir)
+
+        if result.get("error"):
+            await self.app.bot.send_message(chat_id, f"❌ Failed: {result['error']}")
+            return
+
+        tags = ", ".join(result.get("tags", [])) or "none"
+        slug = result.get("slug", "")
+        title = result.get("title", "Untitled")
+        await self.app.bot.send_message(
+            chat_id,
+            f"✅ {title}\n🏷️ {tags}\n📁 references/{slug}.md",
+        )
 
     async def cmd_order(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Send order. Usage: /order [machine] <message> or /order all <message>"""
@@ -489,6 +578,7 @@ class TelegramChannel(BaseChannel):
             "🌌 *Galaxy-gazer Commands*\n\n"
             "`/status [machine|all]` — Machine status (git, tests, reports)\n"
             "`/concerns [machine|all]` — Latest Stargazer concerns\n"
+            "`/feed <url> [note]` — Ingest reference into knowledge archive\n"
             "`/order [machine|all] <msg>` — Send order to Stargazer\n"
             "`/machines` — List registered machines\n"
             "`/help` — This message\n\n"
@@ -570,14 +660,18 @@ class TelegramChannel(BaseChannel):
                                             chat_id=user_id, text=chunk
                                         )
                                     except Exception as e:
-                                        logger.error(f"[outbox] Failed to send to {user_id}: {e}")
+                                        logger.error(
+                                            f"[outbox] Failed to send to {user_id}: {e}"
+                                        )
 
                         msg_data["sent"] = True
                         msg_data["sent_at"] = datetime.now(timezone.utc).isoformat()
                         with open(outbox_file, "w") as f:
                             json.dump(msg_data, f, indent=2)
 
-                        logger.info(f"[outbox] Sent message from {machine_name}/{from_agent}")
+                        logger.info(
+                            f"[outbox] Sent message from {machine_name}/{from_agent}"
+                        )
 
                     except Exception as e:
                         logger.error(f"[outbox] Error processing {outbox_file}: {e}")
@@ -609,7 +703,8 @@ class TelegramChannel(BaseChannel):
                             repo = machine_config["repo_path"]
                             order_ts = Path(order_file).stem
                             matching_response = (
-                                repo / f".sisyphus/notepads/galaxy-order-response-{order_ts}.md"
+                                repo
+                                / f".sisyphus/notepads/galaxy-order-response-{order_ts}.md"
                             )
 
                             response_file = None
@@ -617,7 +712,8 @@ class TelegramChannel(BaseChannel):
                                 response_file = str(matching_response)
                             else:
                                 response_pattern = str(
-                                    repo / ".sisyphus/notepads/galaxy-order-response-*.md"
+                                    repo
+                                    / ".sisyphus/notepads/galaxy-order-response-*.md"
                                 )
                                 responses = sorted(glob.glob(response_pattern))
                                 if responses:
@@ -713,16 +809,17 @@ class TelegramChannel(BaseChannel):
     async def start(self) -> None:
         """Start Telegram bot with polling."""
         if "CHANGE-ME" in self.token:
-            raise ValueError(
-                "Update telegram_token in config. See config.json.example"
-            )
+            raise ValueError("Update telegram_token in config. See config.json.example")
 
-        self.app = ApplicationBuilder().token(self.token).post_init(self._post_init).build()
+        self.app = (
+            ApplicationBuilder().token(self.token).post_init(self._post_init).build()
+        )
 
         self.app.add_handler(CommandHandler("start", self.cmd_help))
         self.app.add_handler(CommandHandler("help", self.cmd_help))
         self.app.add_handler(CommandHandler("status", self.cmd_status))
         self.app.add_handler(CommandHandler("concerns", self.cmd_concerns))
+        self.app.add_handler(CommandHandler("feed", self.cmd_feed))
         self.app.add_handler(CommandHandler("order", self.cmd_order))
         self.app.add_handler(CommandHandler("machines", self.cmd_machines))
         self.app.add_handler(

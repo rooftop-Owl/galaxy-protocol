@@ -17,12 +17,16 @@ class WebChannel(BaseChannel):
     """Web-based chat channel using WebSockets.
 
     Serves a minimal chat UI at / and WebSocket endpoint at /ws.
+    Requires JWT authentication via UserStore.
     """
 
-    def __init__(self, config: Dict, bus):
+    def __init__(self, config: Dict, bus, user_store):
         super().__init__(config, bus)
+        if user_store is None:
+            raise ValueError("WebChannel requires a UserStore instance")
+        self.user_store = user_store
         self.port = config.get("port", 8080)
-        self.authorized_users = config.get("authorized_users", [])
+        self.secure_cookies = config.get("secure_cookies", False)
         self.connections: Dict[str, web.WebSocketResponse] = {}
         self.app = None
         self.runner = None
@@ -32,6 +36,9 @@ class WebChannel(BaseChannel):
         """Start aiohttp web server."""
         self.app = web.Application()
         self.app.router.add_get("/", self.handle_index)
+        self.app.router.add_get("/login", self.handle_login_page)
+        self.app.router.add_post("/login", self.handle_login)
+        self.app.router.add_get("/logout", self.handle_logout)
         self.app.router.add_get("/ws", self.handle_websocket)
         self.app.router.add_static("/static", Path(__file__).parent.parent / "static")
 
@@ -64,51 +71,121 @@ class WebChannel(BaseChannel):
             logger.warning(f"No active WebSocket for chat_id={msg.chat_id}")
 
     async def handle_index(self, request):
-        """Serve index.html."""
-        index_path = Path(__file__).parent.parent / "static" / "index.html"
-        return web.FileResponse(index_path)
+        """Serve index.html (requires authentication)."""
+        token = request.cookies.get("galaxy_token")
+        if token:
+            user_data = self.user_store.verify_token(token)
+            if user_data:
+                index_path = Path(__file__).parent.parent / "static" / "index.html"
+                return web.FileResponse(index_path)
+        raise web.HTTPFound("/login")
+
+    async def handle_login_page(self, request):
+        """Serve login.html."""
+        login_path = Path(__file__).parent.parent / "static" / "login.html"
+        return web.FileResponse(login_path)
+
+    async def handle_login(self, request):
+        """Authenticate user and set JWT cookie."""
+        data = await request.post()
+        username = data.get("username", "").strip()
+        password = data.get("password", "")
+
+        if self.user_store.verify_password(username, password):
+            user = self.user_store.get_by_username(username)
+            if user:
+                token = self.user_store.create_token(user.id, user.username)
+                response = web.HTTPFound("/")
+                response.set_cookie(
+                    "galaxy_token",
+                    token,
+                    max_age=86400,
+                    httponly=True,
+                    secure=self.secure_cookies,
+                    samesite="Lax",
+                )
+                return response
+
+        return web.json_response(
+            {"error": "Invalid credentials"},
+            status=401,
+        )
+
+    async def handle_logout(self, request):
+        """Clear JWT cookie and redirect to login."""
+        response = web.HTTPFound("/login")
+        response.del_cookie("galaxy_token")
+        return response
 
     async def handle_websocket(self, request):
-        """WebSocket handler."""
-        ws = web.WebSocketResponse()
+        """WebSocket handler (requires authentication)."""
+        ws = web.WebSocketResponse(autoping=True, heartbeat=5.0)
         await ws.prepare(request)
 
-        # Generate chat_id from connection
-        chat_id = f"web-{id(ws)}"
-        self.connections[chat_id] = ws
+        token = request.cookies.get("galaxy_token")
+        logger.debug(f"WebSocket auth: token={'present' if token else 'missing'}")
+        
+        user_data = None
+        if token:
+            try:
+                user_data = self.user_store.verify_token(token)
+                logger.debug(f"Token verification: {('success: ' + user_data['user_id']) if user_data else 'failed'}")
+            except Exception as e:
+                logger.error(f"Token verification error: {e}", exc_info=True)
 
-        # Send welcome message
+        if not user_data:
+            logger.warning(f"WebSocket auth failed for {request.remote}")
+            await ws.send_json(
+                {"type": "error", "content": "Unauthorized - please login"}
+            )
+            await ws.close()
+            return ws
+
+        user_id = user_data["user_id"]
+        chat_id = user_id
+        sender_id = user_id
+        logger.debug(f"WebSocket user_id: {user_id}")
+
+        old_ws = self.connections.get(chat_id)
+        if old_ws and not old_ws.closed:
+            logger.debug(f"Closing old WebSocket for {chat_id}")
+            await old_ws.send_json({"type": "system", "content": "Session replaced by new connection"})
+            await old_ws.close()
+
+        self.connections[chat_id] = ws
+        logger.debug(f"Added WebSocket to connections: {chat_id}")
+
+        logger.debug(f"Sending welcome message to {chat_id}")
         await ws.send_json(
-            {"type": "system", "content": f"Connected as {chat_id}", "chat_id": chat_id}
+            {
+                "type": "system",
+                "content": f"Connected as {user_data['username']}",
+                "chat_id": chat_id,
+            }
         )
+        logger.debug(f"Welcome message sent, entering message loop")
 
         try:
             async for msg in ws:
                 if msg.type == WSMsgType.TEXT:
                     data = json.loads(msg.data)
                     content = data.get("content", "")
-                    sender_id = data.get("sender_id", chat_id)
 
-                    # Authorization check (skip for dynamically generated web-* IDs on localhost)
-                    if self.authorized_users and not sender_id.startswith("web-"):
-                        if sender_id not in self.authorized_users:
-                            await ws.send_json(
-                                {"type": "error", "content": "Unauthorized"}
-                            )
-                            continue
-
-                    # Publish to bus
                     await self._handle_message(
                         sender_id=sender_id,
                         chat_id=chat_id,
                         content=content,
-                        metadata={"source": "web"},
+                        metadata={"source": "web", "username": user_data["username"]},
+                        user_id=user_id,
                     )
 
                 elif msg.type == WSMsgType.ERROR:
                     logger.error(f"WebSocket error: {ws.exception()}")
 
+        except Exception as e:
+            logger.error(f"WebSocket message loop error for {chat_id}: {e}", exc_info=True)
         finally:
+            logger.debug(f"WebSocket loop exited for {chat_id}, closed={ws.closed}")
             self.connections.pop(chat_id, None)
 
         return ws
