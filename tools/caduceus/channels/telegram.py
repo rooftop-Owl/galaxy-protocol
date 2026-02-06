@@ -591,8 +591,13 @@ class TelegramChannel(BaseChannel):
 
     async def poll_outbox_messages(self):
         """Background task: Check for proactive messages from agents."""
+        logger.info(
+            "[outbox] poll_outbox_messages task started, polling every %.1f seconds",
+            self.poll_interval / 2,
+        )
         while True:
             await asyncio.sleep(self.poll_interval / 2)
+            logger.debug("[outbox] Polling outbox directory")
 
             for machine_name, machine_config in self.machines.items():
                 if not self.is_local(machine_config):
@@ -803,8 +808,11 @@ class TelegramChannel(BaseChannel):
 
     async def _post_init(self, app):
         """Called after bot initialization - start background tasks."""
+        logger.info("[background] Starting background tasks")
         asyncio.create_task(self.poll_order_acknowledgments())
+        logger.info("[background] poll_order_acknowledgments task created")
         asyncio.create_task(self.poll_outbox_messages())
+        logger.info("[background] poll_outbox_messages task created")
 
     async def start(self) -> None:
         """Start Telegram bot with polling."""
@@ -834,6 +842,13 @@ class TelegramChannel(BaseChannel):
         await self.app.initialize()
         await self.app.start()
         await self.app.updater.start_polling()
+
+        # Start background tasks manually (post_init not reliable)
+        logger.info("[background] Starting background tasks")
+        asyncio.create_task(self.poll_order_acknowledgments())
+        logger.info("[background] poll_order_acknowledgments task created")
+        asyncio.create_task(self.poll_outbox_messages())
+        logger.info("[background] poll_outbox_messages task created")
 
     async def stop(self) -> None:
         """Stop Telegram bot gracefully."""
