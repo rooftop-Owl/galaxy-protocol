@@ -699,7 +699,11 @@ class TelegramChannel(BaseChannel):
                             chunks.append(full_text[:split_at])
                             full_text = full_text[split_at:].lstrip("\n")
 
-                        for user_id in self.authorized:
+                        # Send to specific chat_id if present, otherwise all authorized
+                        target_chat = msg_data.get("chat_id")
+                        recipients = [target_chat] if target_chat else self.authorized
+                        
+                        for user_id in recipients:
                             for chunk in chunks:
                                 try:
                                     await self.app.bot.send_message(

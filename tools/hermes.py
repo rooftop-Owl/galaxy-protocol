@@ -135,7 +135,7 @@ def process_order(order_file, server_url):
 
         write_response(order_id, order, payload, response_text)
         archive_order(order_id, order, claimed_file)
-        send_notification(order_id, payload, response_text)
+        send_notification(order_id, payload, response_text, order.get("chat_id"))
 
         stats["orders_processed"] += 1
         return True
@@ -273,7 +273,7 @@ def archive_order(order_id, order, claimed_file):
     claimed_file.unlink()
 
 
-def send_notification(order_id, payload, response_text):
+def send_notification(order_id, payload, response_text, chat_id=None):
     """Write outbox notification for Telegram relay. Full response included."""
     OUTBOX_DIR.mkdir(parents=True, exist_ok=True)
     notification = {
@@ -285,6 +285,8 @@ def send_notification(order_id, payload, response_text):
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "sent": False,
     }
+    if chat_id:
+        notification["chat_id"] = chat_id
     outbox_file = OUTBOX_DIR / ("hermes-%s.json" % order_id)
     outbox_file.write_text(json.dumps(notification, indent=2))
 
