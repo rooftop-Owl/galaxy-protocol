@@ -774,6 +774,12 @@ class TelegramChannel(BaseChannel):
                                 if responses:
                                     response_file = responses[-1]
 
+                            # Skip if outbox file exists (outbox has better routing with chat_id)
+                            outbox_file = repo / f".sisyphus/notepads/galaxy-outbox/hermes-{order_ts}.json"
+                            if outbox_file.exists():
+                                completed.append(order_file)
+                                continue
+
                             if response_file:
                                 with open(response_file) as rf:
                                     response_text = rf.read()
