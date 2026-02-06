@@ -132,6 +132,7 @@ sudo systemctl status caduceus-gateway
 | `/concerns [machine|all]` | Latest Stargazer concerns |
 | `/order [machine|all] <msg>` | Send an order to a machine |
 | `/feed <url> [note]` | Capture external reference into the knowledge archive |
+| `/stars <action>` | Manage GitHub star lists (list, audit, sync, --sync-from-github) |
 | `/machines` | List registered machines |
 | `/help` | Show available commands |
 
