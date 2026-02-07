@@ -257,6 +257,64 @@ remote-server
   Path: /home/deploy/astraeus
 ```
 
+#### Manage GitHub Stars
+
+**List all star lists**:
+```
+/stars list
+```
+
+**Response**:
+```
+⭐ Star Lists (15 lists, 88 repos)
+
+🔶 Claude — 30 repos
+⌨️ Agents & Vibe Coding — 24 repos
+🧠 AI Memory & RAG — 13 repos
+🔧 Dev Tools — 13 repos
+...
+```
+
+**Audit starred repos**:
+```
+/stars audit
+```
+
+Finds repos you've starred on GitHub but haven't categorized yet.
+
+**Response**:
+```
+🔍 Star Audit Results
+
+GitHub Stars: 83 repos
+Tracked in config: 86 repos
+
+⚠️ Orphans (2 starred but not tracked):
+- owner/repo-name
+- another/repo-name
+```
+
+**Import untracked stars**:
+```
+/stars import
+```
+
+Automatically categorizes orphaned repos and adds them to `.sisyphus/stars.json`.
+
+**Star a new repo**:
+```
+/stars https://github.com/owner/repo-name
+```
+
+Auto-stars the repo, categorizes it, and updates your star lists.
+
+**Get help**:
+```
+/stars available commands
+```
+
+Shows all available `/stars` subcommands.
+
 ---
 
 ## Demo Scenarios

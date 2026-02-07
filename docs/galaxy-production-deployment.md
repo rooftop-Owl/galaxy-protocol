@@ -1,53 +1,66 @@
 # Galaxy Protocol Production Deployment Guide
 
-**Phase D1: Production Operations**
+**Phase 2: Caduceus + Hermes Architecture**
 
-This guide covers deploying Galaxy Protocol to a production environment with monitoring, health checks, and operational tooling.
+This guide covers deploying Galaxy Protocol with the current Phase 2 architecture: Caduceus gateway (Telegram) + Hermes executor (order dispatcher).
+
+> **Note**: This document covers the modern Phase 2 architecture. For legacy Phase D1 (galaxy-mcp), see the archive section.
 
 ---
 
-## Architecture Overview
+## Phase 2 Architecture Overview
 
 ```
-┌─────────────────┐
-│  Telegram Bot   │  Receives /order commands from phone
-└────────┬────────┘
+┌──────────────────┐
+│  Telegram App    │  User sends commands from phone
+└────────┬─────────┘
          │
          ▼
-┌─────────────────┐
-│  Galaxy Orders  │  .sisyphus/notepads/galaxy-orders/*.json
-└────────┬────────┘
+┌──────────────────┐
+│  Caduceus        │  Multi-channel gateway (Telegram polling)
+│  Gateway         │  tools/caduceus/gateway.py
+└────────┬─────────┘
+         │ writes
+         ▼
+┌──────────────────┐
+│  Galaxy Orders   │  .sisyphus/notepads/galaxy-orders/*.json
+└────────┬─────────┘
+         │ polls (30s interval)
+         ▼
+┌──────────────────┐
+│  Hermes          │  Order dispatcher daemon
+│  Executor        │  tools/hermes.py
+└────────┬─────────┘
+         │ spawns
+         ▼
+┌──────────────────┐
+│ opencode run     │  Full agent session with persistent context
+│ (persistent)     │  Session continuity via hermes-session.json
+└────────┬─────────┘
          │
          ▼
-┌─────────────────┐
-│   Galaxy MCP    │  Watches orders directory (FastMCP server)
-└────────┬────────┘
-         │
+┌──────────────────┐
+│  Agent System    │  Sisyphus orchestration + specialized agents
+│  (Sisyphus)      │  Full delegation, skills, Code of Conduct
+└────────┬─────────┘
+         │ writes
          ▼
-┌─────────────────┐
-│ opencode serve  │  Persistent server on port 4096
-└────────┬────────┘
-         │
+┌──────────────────┐
+│   Response       │  .sisyphus/notepads/galaxy-order-response-*.md
+└────────┬─────────┘
+         │ reads
          ▼
-┌─────────────────┐
-│ opencode run    │  Fresh agent per order (--attach)
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Agent System   │  Sisyphus + specialized agents
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│   Response      │  .sisyphus/notepads/galaxy-order-response-*.md
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│   Telegram      │  Bot sends response back to phone
-└─────────────────┘
+┌──────────────────┐
+│  Caduceus        │  Sends response back via Telegram
+│  Gateway         │
+└──────────────────┘
 ```
+
+**Key Differences from Phase D1**:
+- ✅ **Persistent sessions**: Hermes maintains session continuity across orders
+- ✅ **Full Sisyphus orchestration**: Orders processed with full agent system
+- ✅ **Multi-channel**: Caduceus supports Telegram, Web, and future channels
+- ✅ **Async architecture**: Gateway and executor run independently
 
 ---
 
@@ -119,14 +132,11 @@ See `.sisyphus/plans/galaxy-phase-d2-sisyphus-integration.md` for architecture d
 
 ## Components
 
-| Component | Purpose | Service |
-|-----------|---------|---------|
-| **opencode serve** | Persistent server for agent execution | `opencode-serve.service` |
-| **Galaxy MCP** | Order watcher and executor | `galaxy-mcp.service` |
-| **Telegram Bot** | User interface via phone | `galaxy.service` |
-| **Health Check** | Monitors system health | `galaxy-health-check.timer` |
-| **Dashboard** | Web monitoring UI (port 5000) | `galaxy-dashboard.service` |
-| **Audit Log** | Compliance and debugging | `logs/galaxy-audit.jsonl` |
+| Component | Purpose | Service | Status |
+|-----------|---------|---------|--------|
+| **Caduceus Gateway** | Multi-channel message gateway (Telegram polling) | `caduceus-gateway.service` | Required |
+| **Hermes Executor** | Order dispatcher daemon (30s polling) | `caduceus-hermes.service` | Required |
+| **opencode** | Agent runtime (spawned by Hermes, no daemon) | N/A | Automatic |
 
 ---
 
@@ -134,21 +144,43 @@ See `.sisyphus/plans/galaxy-phase-d2-sisyphus-integration.md` for architecture d
 
 ### System Requirements
 - Ubuntu 20.04+ or similar Linux distribution
-- Python 3.9+
+- **Python 3.7+** (required for subprocess.capture_output in Hermes)
 - systemd (for service management)
+- opencode CLI installed (`~/.opencode/bin/opencode`)
 - 4GB+ RAM recommended
 - 10GB+ disk space
 
 ### Software Dependencies
 ```bash
 sudo apt update
-sudo apt install -y python3 python3-pip curl systemd
+sudo apt install -y python3 python3-pip curl systemd git
 ```
 
 ### Python Dependencies
 ```bash
-cd /path/to/galaxy-protocol
-pip3 install -r tools/galaxy/requirements.txt
+cd /path/to/astraeus/galaxy-protocol
+pip3 install -r tools/requirements.txt
+```
+
+### Critical Requirements
+
+**Python Version**: Hermes uses `subprocess.run(capture_output=True)` which requires Python 3.7+. System Python (`/usr/bin/python3`) on older distributions may be 3.6.x and will fail with:
+```
+TypeError: __init__() got an unexpected keyword argument 'capture_output'
+```
+
+**Solution**: Use Anaconda or pyenv Python 3.7+:
+```bash
+# Check Python version
+python3 --version  # Must be 3.7+
+
+# If using Anaconda
+which python3      # Should point to ~/anaconda3/bin/python3
+```
+
+**PATH Requirements**: Hermes spawns `opencode run` which requires `opencode` binary in PATH. The systemd service must include:
+```ini
+Environment="PATH=/home/user/.opencode/bin:/home/user/anaconda3/bin:/usr/local/bin:/usr/bin:/bin"
 ```
 
 ---
@@ -191,54 +223,74 @@ mkdir -p .sisyphus/notepads/galaxy-outbox
 mkdir -p logs
 ```
 
-### 4. Install Systemd Services
+### 4. Configure Systemd Services
 
-**Update service files** with correct paths:
-```bash
-# Edit WorkingDirectory in each service file
-sed -i "s|/home/zephyr/projects/galaxy-protocol|$(pwd)|g" \
-  tools/galaxy/*.service \
-  tools/galaxy/galaxy-health-check.service \
-  tools/galaxy/galaxy-health-check.timer
-```
+**Template service files** are in `galaxy-protocol/services/`:
+- `caduceus-gateway.service` — Telegram polling daemon
+- `caduceus-hermes.service` — Order dispatcher daemon
 
-**Install for user systemd:**
+**Install services** (replace `/home/doyoon` with your home directory and `/home/doyoon/anaconda3` with your Python 3.7+ path):
+
 ```bash
+# Create user systemd directory
 mkdir -p ~/.config/systemd/user
-cp tools/galaxy/opencode-serve.service ~/.config/systemd/user/
-cp tools/galaxy/galaxy-mcp.service ~/.config/systemd/user/
-cp tools/galaxy/galaxy.service ~/.config/systemd/user/
-cp tools/galaxy/galaxy-health-check.service ~/.config/systemd/user/
-cp tools/galaxy/galaxy-health-check.timer ~/.config/systemd/user/
-cp tools/galaxy/galaxy-dashboard.service ~/.config/systemd/user/
+
+# Copy service templates
+cp galaxy-protocol/services/caduceus-gateway.service ~/.config/systemd/user/
+cp galaxy-protocol/services/caduceus-hermes.service ~/.config/systemd/user/
+
+# Edit service files with your paths
+# Replace /home/doyoon with YOUR home directory
+# Replace /home/doyoon/anaconda3 with YOUR Python 3.7+ installation
+nano ~/.config/systemd/user/caduceus-gateway.service
+nano ~/.config/systemd/user/caduceus-hermes.service
+
+# Reload systemd
 systemctl --user daemon-reload
 ```
 
-**Install for system-wide (requires sudo):**
-```bash
-sudo cp tools/galaxy/*.service /etc/systemd/system/
-sudo cp tools/galaxy/galaxy-health-check.timer /etc/systemd/system/
-sudo systemctl daemon-reload
+**Key service file edits**:
+
+For `caduceus-gateway.service`:
+```ini
+[Service]
+WorkingDirectory=/home/YOUR_USER/astraeus  # ← Change this
+ExecStart=/home/YOUR_USER/anaconda3/bin/python3 /home/YOUR_USER/astraeus/galaxy-protocol/tools/caduceus/gateway.py --config /home/YOUR_USER/astraeus/.galaxy/config.json  # ← Change all paths
+```
+
+For `caduceus-hermes.service`:
+```ini
+[Service]
+WorkingDirectory=/home/YOUR_USER/astraeus  # ← Change this
+ExecStart=/home/YOUR_USER/anaconda3/bin/python3 /home/YOUR_USER/astraeus/galaxy-protocol/tools/hermes.py --interval 30  # ← Change Python path
+Environment="PATH=/home/YOUR_USER/.opencode/bin:/home/YOUR_USER/anaconda3/bin:/usr/local/bin:/usr/bin:/bin"  # ← Change paths
 ```
 
 ### 5. Enable and Start Services
 
-**User systemd:**
 ```bash
-systemctl --user enable --now opencode-serve.service
-systemctl --user enable --now galaxy-mcp.service
-systemctl --user enable --now galaxy.service
-systemctl --user enable --now galaxy-health-check.timer
-systemctl --user enable --now galaxy-dashboard.service
+# Enable services to start on boot
+systemctl --user enable caduceus-gateway
+systemctl --user enable caduceus-hermes
+
+# Start services now
+systemctl --user start caduceus-gateway
+systemctl --user start caduceus-hermes
 ```
 
-**System-wide:**
+**Verify services are running**:
 ```bash
-sudo systemctl enable --now opencode-serve.service
-sudo systemctl enable --now galaxy-mcp.service
-sudo systemctl enable --now galaxy.service
-sudo systemctl enable --now galaxy-health-check.timer
-sudo systemctl enable --now galaxy-dashboard.service
+systemctl --user status caduceus-gateway --no-pager
+systemctl --user status caduceus-hermes --no-pager
+```
+
+Expected output:
+```
+● caduceus-gateway.service - Caduceus Gateway - Telegram Bot
+   Active: active (running) since ...
+   
+● caduceus-hermes.service - Caduceus Hermes - Galaxy Order Dispatcher  
+   Active: active (running) since ...
 ```
 
 ---
@@ -247,14 +299,20 @@ sudo systemctl enable --now galaxy-dashboard.service
 
 ### Check Service Status
 ```bash
-systemctl --user status opencode-serve.service
-systemctl --user status galaxy-mcp.service
-systemctl --user status galaxy.service
-systemctl --user status galaxy-health-check.timer
-systemctl --user status galaxy-dashboard.service
+systemctl --user status caduceus-gateway
+systemctl --user status caduceus-hermes
 ```
 
-All services should show `Active: active (running)`.
+Both services should show `Active: active (running)`.
+
+### Check Process Status
+```bash
+# Verify Caduceus gateway is running
+ps aux | grep "caduceus/gateway.py" | grep -v grep
+
+# Verify Hermes is running  
+ps aux | grep "hermes.py" | grep -v grep
+```
 
 ### Check Health
 ```bash

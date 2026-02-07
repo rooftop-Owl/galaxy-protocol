@@ -1,0 +1,23 @@
+[Unit]
+Description=Caduceus Hermes - Galaxy Order Dispatcher
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/doyoon/astraeus
+ExecStart=/home/doyoon/anaconda3/bin/python3 /home/doyoon/astraeus/galaxy-protocol/tools/hermes.py --interval 30
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Environment
+Environment="PATH=/home/doyoon/.opencode/bin:/home/doyoon/.bun/bin:/home/doyoon/anaconda3/bin:/home/doyoon/.local/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONUNBUFFERED=1"
+
+# Resource limits
+MemoryMax=512M
+CPUQuota=50%
+
+[Install]
+WantedBy=default.target
