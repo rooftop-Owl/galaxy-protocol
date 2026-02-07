@@ -21,6 +21,16 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Galaxy response logger
+try:
+    from response_logger import log_response
+except ImportError:
+    # Fallback if running from different directory
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).parent))
+    from response_logger import log_response
+
 # Paths
 # PHASE 2: Production mode - orders/responses in parent repo, not submodule
 REPO_ROOT = Path(
@@ -86,7 +96,7 @@ def build_prompt(payload):
             "\n"
             "Command: " + payload
         )
-    
+
     # Default prompt for general orders
     return (
         "[Galaxy Order via Telegram]\n"
@@ -114,6 +124,7 @@ def process_order(order_file, server_url):
     """Process a single order file. Every order goes to the agent."""
     order_id = order_file.stem
     claimed_file = order_file.with_suffix(".json.processing")
+    start_time = time.time()
 
     try:
         try:
@@ -135,9 +146,32 @@ def process_order(order_file, server_url):
         prompt = build_prompt(payload)
         response_text = call_agent(prompt, server_url)
 
-        write_response(order_id, order, payload, response_text)
+        latency_ms = int((time.time() - start_time) * 1000)
+
+        # Write response file (for backward compat with existing readers)
+        response_file = write_response(order_id, order, payload, response_text)
+
+        # Archive order
         archive_order(order_id, order, claimed_file)
+
+        # Send notification
         send_notification(order_id, payload, response_text, order.get("chat_id"))
+
+        # Log to structured telemetry
+        log_response(
+            order_id=order_id,
+            status="delivered",
+            response_text=response_text,
+            channel=order.get("channel", "telegram"),
+            latency_ms=latency_ms,
+            payload=payload,
+        )
+
+        # Delete response file now that it's logged
+        try:
+            response_file.unlink()
+        except OSError:
+            pass  # File already consumed by notification sender, ignore
 
         stats["orders_processed"] += 1
         return True
@@ -145,6 +179,25 @@ def process_order(order_file, server_url):
     except Exception as e:
         print(f"  ERR {order_id}: {e}")
         stats["failure_count"] += 1
+
+        # Log failure (extract order/payload safely)
+        latency_ms = int((time.time() - start_time) * 1000)
+        try:
+            order_data = (
+                json.loads(claimed_file.read_text()) if claimed_file.exists() else {}
+            )
+            log_response(
+                order_id=order_id,
+                status="failed",
+                error=str(e),
+                channel=order_data.get("channel", "telegram"),
+                latency_ms=latency_ms,
+                payload=order_data.get("payload"),
+            )
+        except Exception:
+            # Logging failed too, just skip it
+            pass
+
         try:
             if claimed_file.exists():
                 claimed_file.rename(order_file)
@@ -251,7 +304,7 @@ def extract_agent_response(raw_output):
 
 
 def write_response(order_id, order, payload, response_text):
-    """Write response markdown file."""
+    """Write response markdown file and return the path."""
     response_file = RESPONSE_DIR / ("galaxy-order-response-%s.md" % order_id)
     now = datetime.now(timezone.utc).isoformat()
     content = "# Galaxy Order Response\n\n"
@@ -262,6 +315,7 @@ def write_response(order_id, order, payload, response_text):
     content += "---\n\n"
     content += "*Hermes - %s*\n" % now
     response_file.write_text(content)
+    return response_file
 
 
 def archive_order(order_id, order, claimed_file):
