@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
-STARS_JSON="$SCRIPT_DIR/stars.json"
+STARS_JSON="$SCRIPT_DIR/../../.sisyphus/stars.json"
 
 if [ ! -f "$STARS_JSON" ]; then
   echo "❌ stars.json not found at $STARS_JSON"
