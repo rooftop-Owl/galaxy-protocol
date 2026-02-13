@@ -22,5 +22,37 @@
     "enabled": true,
     "port": 8080,
     "authorized_users": [123456789]
+  },
+  "features": {
+    "GALAXY_DEEPWIKI_ENABLED": false,
+    "GALAXY_VOICE_ENABLED": false,
+    "GALAXY_IMAGE_PDF_ENABLED": false,
+    "GALAXY_MULTI_PROJECT_ENABLED": false,
+    "GALAXY_PRIORITY_SCHEDULING_ENABLED": false,
+    "GALAXY_DIGEST_PUSH_ENABLED": false
+  },
+  "deepwiki": {
+    "timeout_seconds": 30
+  },
+  "voice": {
+    "whisper_model": "base",
+    "max_duration_seconds": 60
+  },
+  "projects": {
+    "climada": {
+      "keywords": ["climada", "hazard", "impact"]
+    },
+    "dart": {
+      "keywords": ["dart", "fortran", "assimilation"]
+    },
+    "research": {
+      "keywords": ["paper", "literature", "citation"]
+    }
+  },
+  "digest_push": {
+    "hour": 9,
+    "minute": 0,
+    "digest_subscribers": [],
+    "persistence_db": ".galaxy/jobs.sqlite"
   }
 }

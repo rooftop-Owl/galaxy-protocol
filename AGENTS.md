@@ -15,7 +15,7 @@ pip install -r galaxy-protocol/tools/requirements.txt
 - **Agent**: `star-curator`
 - **Commands**: `/galaxy-standby`, `/stars`, `/feed`
 - **Rule**: `galaxy-orders`
-- **Runtime components**: `tools/caduceus/gateway.py`, `tools/hermes.py`, `tools/feed_processor.py`
+- **Runtime components**: `tools/caduceus/gateway.py`, `tools/hermes.py`, `tools/feed_processor.py`, `tools/handlers/*.py`
 
 ## WHERE TO LOOK
 | Task | Location | Notes |

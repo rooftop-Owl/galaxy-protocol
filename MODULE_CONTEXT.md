@@ -31,6 +31,7 @@ Phone → Telegram → bot.py (any text = order)
 |-----------|------|---------|
 | **Telegram Bot** | `tools/bot.py` | Receives orders, delivers responses |
 | **Hermes** | `tools/hermes.py` | Polls for orders, dispatches to agents |
+| **Feature Handlers** | `tools/handlers/*.py` | DeepWiki, voice, OCR/PDF, routing, digest push |
 | **Galaxy MCP** | `tools/galaxy_mcp.py` | MCP server for order processing |
 | **Dashboard** | `tools/dashboard.py` | Web monitoring dashboard |
 | **Star Curator** | `.claude/agents/star-curator.md` | GitHub star list management |

@@ -13,6 +13,7 @@ Usage:
 """
 
 import argparse
+import importlib
 import json
 import signal
 import subprocess
@@ -23,13 +24,12 @@ from pathlib import Path
 
 # Galaxy response logger
 try:
-    from response_logger import log_response
+    response_logger = importlib.import_module("response_logger")
 except ImportError:
-    # Fallback if running from different directory
-    import sys
-
     sys.path.insert(0, str(Path(__file__).parent))
-    from response_logger import log_response
+    response_logger = importlib.import_module("response_logger")
+
+log_response = response_logger.log_response
 
 # Paths
 # PHASE 2: Production mode - orders/responses in parent repo, not submodule
@@ -44,14 +44,15 @@ OUTBOX_DIR = REPO_ROOT / ".sisyphus/notepads/galaxy-outbox"
 HEARTBEAT_FILE = REPO_ROOT / ".sisyphus/notepads/galaxy-session-heartbeat.json"
 GALAXY_CONFIG = REPO_ROOT / ".galaxy/config.json"  # Config stays in parent
 SESSION_FILE = MODULE_ROOT / ".galaxy/hermes-session.json"
+CORRUPTED_DIR = REPO_ROOT / ".sisyphus/notepads/galaxy-orders-corrupted"
 
 # State
 running = True
 stats = {
-    "started_at": None,
+    "started_at": "",
     "orders_processed": 0,
     "failure_count": 0,
-    "last_poll_at": None,
+    "last_poll_at": "",
 }
 
 
@@ -136,8 +137,14 @@ def process_order(order_file, server_url):
         # Use order_id from JSON if present (for Telegram orders with custom IDs)
         order_id = order.get("order_id", order_id)
         payload = order.get("payload", "").strip()
+        priority = order.get("priority", "normal")
+        project = order.get("project", "main")
+        media = order.get("media", None)
+        order["priority"] = priority
+        order["project"] = project
+        order["media"] = media
 
-        if not payload:
+        if not payload and not media:
             claimed_file.rename(order_file)
             return False
 
@@ -173,12 +180,12 @@ def process_order(order_file, server_url):
         except OSError:
             pass  # File already consumed by notification sender, ignore
 
-        stats["orders_processed"] += 1
+        stats["orders_processed"] = int(stats.get("orders_processed", 0)) + 1
         return True
 
     except Exception as e:
         print(f"  ERR {order_id}: {e}")
-        stats["failure_count"] += 1
+        stats["failure_count"] = int(stats.get("failure_count", 0)) + 1
 
         # Log failure (extract order/payload safely)
         latency_ms = int((time.time() - start_time) * 1000)
@@ -410,7 +417,9 @@ def notify_deactivation():
     OUTBOX_DIR.mkdir(parents=True, exist_ok=True)
     uptime = "unknown"
     if stats["started_at"]:
-        delta = datetime.now(timezone.utc) - datetime.fromisoformat(stats["started_at"])
+        delta = datetime.now(timezone.utc) - datetime.fromisoformat(
+            str(stats["started_at"])
+        )
         hours, remainder = divmod(int(delta.total_seconds()), 3600)
         minutes, _ = divmod(remainder, 60)
         uptime = "%dh %dm" % (hours, minutes)
@@ -454,6 +463,7 @@ def main():
     ORDERS_DIR.mkdir(parents=True, exist_ok=True)
     ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
     OUTBOX_DIR.mkdir(parents=True, exist_ok=True)
+    CORRUPTED_DIR.mkdir(parents=True, exist_ok=True)
 
     stats["started_at"] = datetime.now(timezone.utc).isoformat()
     update_heartbeat()
@@ -475,7 +485,15 @@ def main():
                         data = json.loads(order_file.read_text())
                         if data.get("acknowledged", False):
                             continue
-                    except (json.JSONDecodeError, OSError):
+                    except json.JSONDecodeError:
+                        print("Corrupted order: %s" % order_file.name)
+                        corrupted_path = CORRUPTED_DIR / order_file.name
+                        try:
+                            order_file.rename(corrupted_path)
+                        except OSError:
+                            pass
+                        continue
+                    except OSError:
                         continue
 
                     print("Order: %s" % order_file.stem)
