@@ -78,3 +78,45 @@ Feature flags live in `.galaxy/config.json` under `features` and are disabled by
 ## License
 
 Same as astraeus.
+
+## DeepWiki Diagnostic Digest
+
+Transform GitHub repository references into actionable intelligence with architectural insights and adoption paths.
+
+### Features
+
+- **Deep Analysis**: Extracts architecture, design patterns, and core abstractions from GitHub repos via DeepWiki MCP
+- **Diagnostic Intelligence**: Generates concrete adoption paths with complexity indicators (🟢🟡🔴)
+- **Scheduled Push**: Daily 9 AM KST digest to Telegram (optional)
+- **Backward Compatible**: Feature-flagged, falls back to shallow capture if disabled
+
+### Configuration
+
+Enable in `.galaxy/config.json`:
+
+```json
+{
+  "features": {
+    "GALAXY_DEEPWIKI_ENABLED": true,
+    "GALAXY_DIGEST_PUSH_ENABLED": true
+  }
+}
+```
+
+### Usage
+
+```bash
+# Capture GitHub repo with deep analysis
+/feed https://github.com/vercel/ai
+
+# Generate diagnostic digest
+/digest --last 7
+```
+
+### Complexity Indicators
+
+| Indicator | Meaning | Criteria |
+|-----------|---------|----------|
+| 🟢 Easy | Quick win | ≤1 file, <2 hours, no deps |
+| 🟡 Moderate | Planned effort | 2-5 files, 2-8 hours, minor deps |
+| 🔴 Complex | Strategic initiative | >5 files, >8 hours, architectural |
