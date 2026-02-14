@@ -3,12 +3,14 @@
 
 import pytest
 from unittest.mock import AsyncMock, patch
+import importlib
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "tools"))
 
-from handlers.deepwiki_analyzer import analyze_repo
+deepwiki_analyzer = importlib.import_module("handlers.deepwiki_analyzer")
+analyze_repo = deepwiki_analyzer.analyze_repo
 
 
 CONFIG_ENABLED = {
@@ -26,9 +28,7 @@ CONFIG_DISABLED = {
 async def test_analyze_repo_success(mock_get_client):
     """Test analyze_repo with successful DeepWiki responses."""
     mock_client = AsyncMock()
-    mock_client.read_wiki_structure = AsyncMock(
-        return_value="Repository structure overview"
-    )
+    mock_client.read_wiki_structure = AsyncMock(return_value="Repository structure overview")
     mock_client.ask_question = AsyncMock(
         side_effect=[
             "Solves problem X",
@@ -93,9 +93,7 @@ async def test_analyze_repo_structure_timeout(mock_get_client):
 async def test_analyze_repo_rate_limited(mock_get_client):
     """Test analyze_repo handles rate limiting."""
     mock_client = AsyncMock()
-    mock_client.read_wiki_structure = AsyncMock(
-        side_effect=Exception("429 Rate limit exceeded")
-    )
+    mock_client.read_wiki_structure = AsyncMock(side_effect=Exception("429 Rate limit exceeded"))
     mock_get_client.return_value = mock_client
 
     result = await analyze_repo("vercel", "ai", CONFIG_ENABLED)
@@ -110,9 +108,7 @@ async def test_analyze_repo_question_timeout(mock_get_client):
     import asyncio
 
     mock_client = AsyncMock()
-    mock_client.read_wiki_structure = AsyncMock(
-        return_value="Repository structure overview"
-    )
+    mock_client.read_wiki_structure = AsyncMock(return_value="Repository structure overview")
     mock_client.ask_question = AsyncMock(
         side_effect=[
             "Solves problem X",
@@ -137,9 +133,7 @@ async def test_analyze_repo_question_timeout(mock_get_client):
 async def test_analyze_repo_partial_results_on_rate_limit(mock_get_client):
     """Test analyze_repo returns partial results when rate limited mid-analysis."""
     mock_client = AsyncMock()
-    mock_client.read_wiki_structure = AsyncMock(
-        return_value="Repository structure overview"
-    )
+    mock_client.read_wiki_structure = AsyncMock(return_value="Repository structure overview")
     mock_client.ask_question = AsyncMock(
         side_effect=[
             "Solves problem X",
@@ -162,9 +156,7 @@ async def test_analyze_repo_partial_results_on_rate_limit(mock_get_client):
 async def test_analyze_repo_question_error(mock_get_client):
     """Test analyze_repo handles question errors gracefully."""
     mock_client = AsyncMock()
-    mock_client.read_wiki_structure = AsyncMock(
-        return_value="Repository structure overview"
-    )
+    mock_client.read_wiki_structure = AsyncMock(return_value="Repository structure overview")
     mock_client.ask_question = AsyncMock(
         side_effect=[
             "Solves problem X",
@@ -189,9 +181,7 @@ async def test_analyze_repo_question_error(mock_get_client):
 async def test_analyze_repo_repo_not_indexed(mock_get_client):
     """Test analyze_repo handles unindexed repository."""
     mock_client = AsyncMock()
-    mock_client.read_wiki_structure = AsyncMock(
-        side_effect=Exception("Repository not found")
-    )
+    mock_client.read_wiki_structure = AsyncMock(side_effect=Exception("Repository not found"))
     mock_get_client.return_value = mock_client
 
     result = await analyze_repo("vercel", "ai", CONFIG_ENABLED)

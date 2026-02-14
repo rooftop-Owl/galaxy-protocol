@@ -60,10 +60,9 @@ async def test_process_feed_dispatches_github_enrichment(
     mock_fetch.return_value = "<html>content</html>"
     mock_metadata.return_value = SimpleNamespace(title="Example Repo")
     mock_extract.return_value = "Sentence one. Sentence two. Sentence three."
+    mock_spawn.return_value = True
 
-    result = await process_feed(
-        "https://github.com/example/repo", None, "telegram", references_dir
-    )
+    result = await process_feed("https://github.com/example/repo", None, "telegram", references_dir)
 
     assert "error" not in result
     assert result["slug"].startswith("202")
@@ -110,17 +109,14 @@ async def test_process_feed_skips_enrichment_when_disabled(
 
 
 @pytest.mark.asyncio
-@patch(
-    "caduceus.feed_processor.asyncio.create_subprocess_exec",
-    side_effect=FileNotFoundError,
-)
-async def test_spawn_enrichment_reports_missing_opencode(_mock_spawn, tmp_path):
+@patch("caduceus.feed_processor.shutil.which", return_value=None)
+async def test_spawn_enrichment_reports_missing_opencode(_mock_which, tmp_path):
     references_dir = tmp_path / ".sisyphus" / "references"
     references_dir.mkdir(parents=True, exist_ok=True)
     reference_path = references_dir / "ref.md"
     reference_path.write_text("placeholder", encoding="utf-8")
 
-    await _spawn_deepwiki_enrichment(
+    started = await _spawn_deepwiki_enrichment(
         repo_url="https://github.com/example/repo",
         owner="example",
         repo="repo",
@@ -128,6 +124,7 @@ async def test_spawn_enrichment_reports_missing_opencode(_mock_spawn, tmp_path):
         reference_path=reference_path,
         chat_id=1791247114,
     )
+    assert started is False
 
     outbox_dir = references_dir.parent / "notepads" / "galaxy-outbox"
     outbox_files = list(outbox_dir.glob("deepwiki-enrich-*.json"))
@@ -136,7 +133,41 @@ async def test_spawn_enrichment_reports_missing_opencode(_mock_spawn, tmp_path):
     payload = json.loads(outbox_files[0].read_text(encoding="utf-8"))
     assert payload["severity"] == "warning"
     assert payload["chat_id"] == 1791247114
-    assert "opencode is not installed" in payload["message"]
+    assert "opencode CLI is not available on PATH" in payload["message"]
+
+
+@pytest.mark.asyncio
+@patch("caduceus.feed_processor._spawn_deepwiki_enrichment", new_callable=AsyncMock)
+@patch("caduceus.feed_processor.Article", DummyArticle)
+@patch("caduceus.feed_processor.trafilatura.extract")
+@patch("caduceus.feed_processor.trafilatura.extract_metadata")
+@patch("caduceus.feed_processor.trafilatura.fetch_url")
+async def test_process_feed_marks_unavailable_when_enrichment_not_started(
+    mock_fetch,
+    mock_metadata,
+    mock_extract,
+    mock_spawn,
+    tmp_path,
+):
+    references_dir = tmp_path / ".sisyphus" / "references"
+    references_dir.mkdir(parents=True, exist_ok=True)
+
+    mock_fetch.return_value = "<html>content</html>"
+    mock_metadata.return_value = SimpleNamespace(title="Example Repo")
+    mock_extract.return_value = "Sentence one. Sentence two. Sentence three."
+    mock_spawn.return_value = False
+
+    result = await process_feed(
+        "https://github.com/example/repo",
+        None,
+        "telegram",
+        references_dir,
+        config={"features": {"GALAXY_DEEPWIKI_ENABLED": True}},
+    )
+
+    assert "error" not in result
+    index_data = json.loads((references_dir / "index.json").read_text(encoding="utf-8"))
+    assert index_data["references"][-1]["analysis"] == "deepwiki-unavailable"
 
 
 @pytest.mark.asyncio
