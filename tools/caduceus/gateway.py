@@ -15,25 +15,39 @@ Architecture:
 
 import argparse
 import asyncio
+import importlib
 import json
 import logging
 import signal
 import sys
 from pathlib import Path
+from typing import Any
 
 # Ensure caduceus package is importable
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from caduceus.auth.store import UserStore
-from caduceus.bus import MessageBus
-from caduceus.channels.telegram import TelegramChannel
-from caduceus.channels.web import WebChannel
-from caduceus.executors.hermes import HermesExecutor
+auth_store_mod = importlib.import_module("caduceus.auth.store")
+bus_mod = importlib.import_module("caduceus.bus")
+telegram_mod = importlib.import_module("caduceus.channels.telegram")
+web_mod = importlib.import_module("caduceus.channels.web")
+executor_mod = importlib.import_module("caduceus.executors.hermes")
+
+UserStore = auth_store_mod.UserStore
+MessageBus = bus_mod.MessageBus
+OutboundMessage = bus_mod.OutboundMessage
+TelegramChannel = telegram_mod.TelegramChannel
+WebChannel = web_mod.WebChannel
+HermesExecutor = executor_mod.HermesExecutor
+
+session_tracker = importlib.import_module("session_tracker")
+log_event = session_tracker.log_event
 
 logger = logging.getLogger("caduceus.gateway")
 
 
-async def executor_loop(bus: MessageBus, executor: HermesExecutor, channels: dict):
+async def executor_loop(
+    bus: MessageBus, executor: HermesExecutor, channels: dict[str, Any]
+):
     """Consume inbound messages, execute, publish outbound responses.
 
     Args:
@@ -58,8 +72,6 @@ async def executor_loop(bus: MessageBus, executor: HermesExecutor, channels: dic
             )
 
             if result.get("success") and result.get("response_text"):
-                from caduceus.bus import OutboundMessage
-
                 response = OutboundMessage(
                     channel=msg.channel,
                     chat_id=msg.chat_id,
@@ -73,7 +85,7 @@ async def executor_loop(bus: MessageBus, executor: HermesExecutor, channels: dic
             logger.error(f"Executor loop error: {e}", exc_info=True)
 
 
-async def outbound_dispatcher(bus: MessageBus, channels: dict):
+async def outbound_dispatcher(bus: MessageBus, channels: dict[str, Any]):
     """Consume outbound messages and route to appropriate channel.
 
     Args:
@@ -94,7 +106,7 @@ async def outbound_dispatcher(bus: MessageBus, channels: dict):
             logger.warning(f"No channel '{msg.channel}' for outbound message")
 
 
-def load_config(config_path: str) -> dict:
+def load_config(config_path: str) -> dict[str, Any]:
     """Load configuration from JSON file."""
     path = Path(config_path)
     if not path.exists():
@@ -106,7 +118,7 @@ def load_config(config_path: str) -> dict:
         return json.load(f)
 
 
-def build_channels(config: dict, bus: MessageBus) -> dict:
+def build_channels(config: dict[str, Any], bus: MessageBus) -> dict[str, Any]:
     """Instantiate channels based on configuration.
 
     Returns dict of {channel_name: channel_instance}.
@@ -116,14 +128,18 @@ def build_channels(config: dict, bus: MessageBus) -> dict:
     auth_config = config.get("auth", {})
     jwt_secret = auth_config.get("jwt_secret", "")
     if not jwt_secret:
-        logger.warning("auth.jwt_secret not configured — web authentication will not work")
+        logger.warning(
+            "auth.jwt_secret not configured — web authentication will not work"
+        )
 
     user_store = UserStore(
         db_path=auth_config.get("db_path", ".galaxy/users.db"),
         jwt_secret=jwt_secret,
         token_expiry_hours=auth_config.get("token_expiry_hours", 24),
     )
-    logger.info(f"UserStore initialized: {auth_config.get('db_path', '.galaxy/users.db')}")
+    logger.info(
+        f"UserStore initialized: {auth_config.get('db_path', '.galaxy/users.db')}"
+    )
 
     token = config.get("telegram_token", "")
     if token and "CHANGE-ME" not in token:
@@ -138,7 +154,7 @@ def build_channels(config: dict, bus: MessageBus) -> dict:
     return channels
 
 
-async def run_gateway(config: dict, test_mode: bool = False):
+async def run_gateway(config: dict[str, Any], test_mode: bool = False):
     """Main gateway coroutine.
 
     Args:
@@ -163,6 +179,13 @@ async def run_gateway(config: dict, test_mode: bool = False):
         "poll_interval": config.get("executor_poll_interval", 1.0),
     }
     executor = HermesExecutor(executor_config)
+
+    log_event(
+        "daemon_started",
+        component="caduceus-gateway",
+        channels=list(channels.keys()),
+        orders_dir=executor_config["orders_dir"],
+    )
 
     if test_mode:
         channel_names = ", ".join(channels.keys())
@@ -206,6 +229,11 @@ async def run_gateway(config: dict, test_mode: bool = False):
 
     finally:
         logger.info("Shutting down...")
+        log_event(
+            "daemon_stopped",
+            component="caduceus-gateway",
+            channels=list(channels.keys()),
+        )
 
         # Cancel background tasks
         for task in tasks:

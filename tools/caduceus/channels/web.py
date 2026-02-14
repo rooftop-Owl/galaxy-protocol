@@ -1,14 +1,18 @@
 """WebChannel - WebSocket-based chat interface."""
 
 import asyncio
+import importlib
 import json
 import logging
-from typing import Dict
+from typing import Any
 from aiohttp import web, WSMsgType
 from pathlib import Path
 
-from caduceus.channels.base import BaseChannel
-from caduceus.bus import OutboundMessage
+from .base import BaseChannel
+from ..bus import OutboundMessage
+
+session_tracker = importlib.import_module("session_tracker")
+log_event = session_tracker.log_event
 
 logger = logging.getLogger(__name__)
 
@@ -20,14 +24,14 @@ class WebChannel(BaseChannel):
     Requires JWT authentication via UserStore.
     """
 
-    def __init__(self, config: Dict, bus, user_store):
+    def __init__(self, config: dict[str, Any], bus, user_store):
         super().__init__(config, bus)
         if user_store is None:
             raise ValueError("WebChannel requires a UserStore instance")
         self.user_store = user_store
         self.port = config.get("port", 8080)
         self.secure_cookies = config.get("secure_cookies", False)
-        self.connections: Dict[str, web.WebSocketResponse] = {}
+        self.connections: dict[str, web.WebSocketResponse] = {}
         self.app = None
         self.runner = None
         self.site = None
@@ -95,6 +99,13 @@ class WebChannel(BaseChannel):
             user = self.user_store.get_by_username(username)
             if user:
                 token = self.user_store.create_token(user.id, user.username)
+                log_event(
+                    "frontend_login_success",
+                    component="web",
+                    user_id=user.id,
+                    username=user.username,
+                    remote=request.remote,
+                )
                 response = web.HTTPFound("/")
                 response.set_cookie(
                     "galaxy_token",
@@ -106,6 +117,12 @@ class WebChannel(BaseChannel):
                 )
                 return response
 
+        log_event(
+            "frontend_login_failed",
+            component="web",
+            username=username,
+            remote=request.remote,
+        )
         return web.json_response(
             {"error": "Invalid credentials"},
             status=401,
@@ -124,17 +141,24 @@ class WebChannel(BaseChannel):
 
         token = request.cookies.get("galaxy_token")
         logger.debug(f"WebSocket auth: token={'present' if token else 'missing'}")
-        
+
         user_data = None
         if token:
             try:
                 user_data = self.user_store.verify_token(token)
-                logger.debug(f"Token verification: {('success: ' + user_data['user_id']) if user_data else 'failed'}")
+                logger.debug(
+                    f"Token verification: {('success: ' + user_data['user_id']) if user_data else 'failed'}"
+                )
             except Exception as e:
                 logger.error(f"Token verification error: {e}", exc_info=True)
 
         if not user_data:
             logger.warning(f"WebSocket auth failed for {request.remote}")
+            log_event(
+                "frontend_ws_auth_failed",
+                component="web",
+                remote=request.remote,
+            )
             await ws.send_json(
                 {"type": "error", "content": "Unauthorized - please login"}
             )
@@ -148,11 +172,29 @@ class WebChannel(BaseChannel):
 
         old_ws = self.connections.get(chat_id)
         if old_ws and not old_ws.closed:
+            log_event(
+                "frontend_ws_replaced",
+                component="web",
+                user_id=user_id,
+                username=user_data["username"],
+                chat_id=chat_id,
+                remote=request.remote,
+            )
             logger.debug(f"Closing old WebSocket for {chat_id}")
-            await old_ws.send_json({"type": "system", "content": "Session replaced by new connection"})
+            await old_ws.send_json(
+                {"type": "system", "content": "Session replaced by new connection"}
+            )
             await old_ws.close()
 
         self.connections[chat_id] = ws
+        log_event(
+            "frontend_ws_connected",
+            component="web",
+            user_id=user_id,
+            username=user_data["username"],
+            chat_id=chat_id,
+            remote=request.remote,
+        )
         logger.debug(f"Added WebSocket to connections: {chat_id}")
 
         logger.debug(f"Sending welcome message to {chat_id}")
@@ -183,9 +225,26 @@ class WebChannel(BaseChannel):
                     logger.error(f"WebSocket error: {ws.exception()}")
 
         except Exception as e:
-            logger.error(f"WebSocket message loop error for {chat_id}: {e}", exc_info=True)
+            logger.error(
+                f"WebSocket message loop error for {chat_id}: {e}", exc_info=True
+            )
+            log_event(
+                "frontend_ws_error",
+                component="web",
+                user_id=user_id,
+                username=user_data["username"],
+                chat_id=chat_id,
+                error=str(e),
+            )
         finally:
             logger.debug(f"WebSocket loop exited for {chat_id}, closed={ws.closed}")
             self.connections.pop(chat_id, None)
+            log_event(
+                "frontend_ws_disconnected",
+                component="web",
+                user_id=user_id,
+                username=user_data["username"],
+                chat_id=chat_id,
+            )
 
         return ws
