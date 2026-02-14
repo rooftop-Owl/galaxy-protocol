@@ -31,19 +31,22 @@ except ImportError:
 
 log_response = response_logger.log_response
 
+session_tracker = importlib.import_module("session_tracker")
+detect_repo_root = session_tracker.detect_repo_root
+log_event = session_tracker.log_event
+session_file_path = session_tracker.session_file_path
+
 # Paths
 # PHASE 2: Production mode - orders/responses in parent repo, not submodule
-REPO_ROOT = Path(
-    __file__
-).parent.parent.parent  # project root (when loaded as submodule)
-MODULE_ROOT = Path(__file__).parent.parent  # galaxy-protocol module root
+REPO_ROOT = detect_repo_root()
+MODULE_ROOT = Path(__file__).parent.parent
 ORDERS_DIR = REPO_ROOT / ".sisyphus/notepads/galaxy-orders"
 ARCHIVE_DIR = REPO_ROOT / ".sisyphus/notepads/galaxy-orders-archive"
 RESPONSE_DIR = REPO_ROOT / ".sisyphus/notepads"
 OUTBOX_DIR = REPO_ROOT / ".sisyphus/notepads/galaxy-outbox"
 HEARTBEAT_FILE = REPO_ROOT / ".sisyphus/notepads/galaxy-session-heartbeat.json"
 GALAXY_CONFIG = REPO_ROOT / ".galaxy/config.json"  # Config stays in parent
-SESSION_FILE = MODULE_ROOT / ".galaxy/hermes-session.json"
+SESSION_FILE = session_file_path(REPO_ROOT)
 CORRUPTED_DIR = REPO_ROOT / ".sisyphus/notepads/galaxy-orders-corrupted"
 
 # State
@@ -225,7 +228,6 @@ def _load_session_id():
 
 
 def _save_session_id(session_id):
-    """Save session ID for continuity."""
     SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
     SESSION_FILE.write_text(
         json.dumps(
@@ -239,22 +241,36 @@ def _save_session_id(session_id):
 
 
 def call_agent(payload, server_url):
-    """Call full agent via opencode run with persistent session."""
     session_id = _load_session_id()
 
-    cmd = ["opencode", "run", "--format", "json"]
-    if session_id:
-        cmd.extend(["--session", session_id])
-    cmd.append(payload)
-
-    try:
-        result = subprocess.run(
+    def _run_opencode(prompt, sid=None):
+        cmd = ["opencode", "run", "--format", "json"]
+        if sid:
+            cmd.extend(["--session", sid])
+        cmd.append(prompt)
+        return subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            timeout=180,  # 3 min
+            timeout=180,
             cwd=str(REPO_ROOT),
         )
+
+    try:
+        result = _run_opencode(payload, session_id)
+
+        if session_id and result.returncode != 0:
+            stderr = (result.stderr or "").lower()
+            if "session" in stderr and (
+                "not found" in stderr or "invalid" in stderr or "expired" in stderr
+            ):
+                log_event(
+                    "backend_session_invalid",
+                    component="hermes",
+                    session_id=session_id,
+                    action="recreate",
+                )
+                result = _run_opencode(payload)
 
         # Extract session ID from JSON output (first line has it)
         if result.stdout:
@@ -267,6 +283,14 @@ def call_agent(payload, server_url):
                     sid = data.get("sessionID")
                     if sid:
                         _save_session_id(sid)
+                        if sid != session_id:
+                            log_event(
+                                "backend_session_assigned",
+                                component="hermes",
+                                session_id=sid,
+                                previous_session_id=session_id,
+                                reason="agent_response",
+                            )
                         break
                 except json.JSONDecodeError:
                     continue
@@ -280,6 +304,41 @@ def call_agent(payload, server_url):
         return "Agent execution timed out (3 min limit)"
     except Exception as e:
         return "Agent connection error: %s" % e
+
+
+def bootstrap_session(server_url):
+    _ = server_url
+    existing_session_id = _load_session_id()
+    if existing_session_id:
+        log_event(
+            "backend_session_reused",
+            component="hermes",
+            session_id=existing_session_id,
+        )
+        return existing_session_id
+
+    prompt = (
+        "[Galaxy Bootstrap] Initialize persistent session for Hermes. "
+        "Reply with exactly: READY"
+    )
+    result = call_agent(prompt, server_url)
+    new_session_id = _load_session_id()
+
+    if new_session_id:
+        log_event(
+            "backend_session_created",
+            component="hermes",
+            session_id=new_session_id,
+            reason="startup",
+        )
+    else:
+        log_event(
+            "backend_session_bootstrap_failed",
+            component="hermes",
+            detail=result[:200] if isinstance(result, str) else "unknown",
+        )
+
+    return new_session_id
 
 
 def extract_agent_response(raw_output):
@@ -368,6 +427,7 @@ def _get_machine_name():
 
 
 def update_heartbeat():
+    session_id = _load_session_id()
     heartbeat = {
         "status": "running",
         "daemon": "hermes",
@@ -377,6 +437,7 @@ def update_heartbeat():
         "orders_processed": stats["orders_processed"],
         "failure_count": stats["failure_count"],
         "machine": _get_machine_name(),
+        "session_id": session_id,
     }
     tmp = HEARTBEAT_FILE.with_suffix(".tmp")
     tmp.write_text(json.dumps(heartbeat, indent=2))
@@ -466,6 +527,13 @@ def main():
     CORRUPTED_DIR.mkdir(parents=True, exist_ok=True)
 
     stats["started_at"] = datetime.now(timezone.utc).isoformat()
+    log_event(
+        "daemon_started",
+        component="hermes",
+        machine=_get_machine_name(),
+        poll_interval_seconds=args.interval,
+    )
+    bootstrap_session(args.server)
     update_heartbeat()
     # notify_activation(args.interval)  # SILENCED: Only notify on errors
 
@@ -513,6 +581,13 @@ def main():
     processed = stats["orders_processed"]
     failed = stats["failure_count"]
     print("\n%d delivered - %d failed" % (processed, failed))
+    log_event(
+        "daemon_stopped",
+        component="hermes",
+        machine=_get_machine_name(),
+        orders_processed=processed,
+        failure_count=failed,
+    )
     # notify_deactivation()  # SILENCED: Only notify on errors
     clear_heartbeat()
 

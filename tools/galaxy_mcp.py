@@ -14,25 +14,30 @@ import os
 import json
 import subprocess
 import sys
+import importlib
 from pathlib import Path
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
-from typing import Dict, List, Optional
+from typing import List, Optional, TypedDict
 
 from fastmcp import FastMCP
 
 # Project root: galaxy-protocol/tools/ -> galaxy-protocol/ -> project/
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+session_tracker = importlib.import_module("session_tracker")
+detect_repo_root = session_tracker.detect_repo_root
+
 try:
-    from tools.galaxy.audit import log_event
+    audit_module = importlib.import_module("audit")
+    log_event = audit_module.log_event
 except ImportError:
 
     def log_event(event_type, data, severity="info"):
-        pass
+        _ = (event_type, data, severity)
 
 
 # Configuration
-REPO_ROOT = Path(__file__).parent.parent.parent  # project root (when loaded as submodule)
+REPO_ROOT = detect_repo_root()
 MODULE_ROOT = Path(__file__).parent.parent  # galaxy-protocol module root
 ORDERS_DIR = REPO_ROOT / ".sisyphus/notepads/galaxy-orders"
 ARCHIVE_DIR = REPO_ROOT / ".sisyphus/notepads/galaxy-orders-archive"
@@ -45,12 +50,20 @@ POLL_INTERVAL = 5  # seconds
 OPENCODE_SERVER = os.environ.get("OPENCODE_ATTACH_URL", "http://localhost:4096")
 HEARTBEAT_TIMEOUT = 120  # seconds - heartbeat older than this = session dead
 
+
+class ServerState(TypedDict):
+    processed_count: int
+    failed_count: int
+    started_at: str
+    last_poll: str
+
+
 # In-memory state (no compaction, persists for server lifetime)
-server_state = {
+server_state: ServerState = {
     "processed_count": 0,
     "failed_count": 0,
-    "started_at": None,
-    "last_poll": None,
+    "started_at": "",
+    "last_poll": "",
 }
 
 
@@ -125,7 +138,7 @@ mcp = FastMCP("galaxy-standby", lifespan=lifespan)
 
 
 @mcp.tool()
-async def galaxy_poll() -> Dict:
+async def galaxy_poll() -> dict[str, object]:
     """
     Poll for unacknowledged Galaxy orders.
 
@@ -161,7 +174,7 @@ async def galaxy_poll() -> Dict:
 
 
 @mcp.tool()
-async def galaxy_execute(order_id: str) -> Dict:
+async def galaxy_execute(order_id: str) -> dict[str, object]:
     """
     Execute a Galaxy order.
 
@@ -368,7 +381,9 @@ async def galaxy_execute(order_id: str) -> Dict:
 
 
 @mcp.tool()
-async def galaxy_acknowledge(order_id: str, skip_execution: bool = False) -> Dict:
+async def galaxy_acknowledge(
+    order_id: str, skip_execution: bool = False
+) -> dict[str, object]:
     """
     Acknowledge an order without executing (for manual handling).
 
@@ -402,7 +417,7 @@ async def galaxy_acknowledge(order_id: str, skip_execution: bool = False) -> Dic
 
 
 @mcp.tool()
-async def galaxy_status() -> Dict:
+async def galaxy_status() -> dict[str, object]:
     """
     Get Galaxy MCP server status and statistics.
 

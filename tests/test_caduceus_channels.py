@@ -112,6 +112,57 @@ class TestWebChannel:
         assert isinstance(web.connections, dict)
         assert len(web.connections) == 0
 
+    @pytest.mark.asyncio
+    async def test_handle_login_logs_success_event(self):
+        bus = MessageBus()
+        user_store = MagicMock()
+        user_store.verify_password.return_value = True
+        user_store.get_by_username.return_value = MagicMock(
+            id="user-1", username="alice"
+        )
+        user_store.create_token.return_value = "token-123"
+
+        channel = WebChannel({}, bus, user_store=user_store)
+
+        request = MagicMock()
+        request.post = AsyncMock(return_value={"username": "alice", "password": "pw"})
+        request.remote = "127.0.0.1"
+
+        with patch("caduceus.channels.web.log_event") as mock_log_event:
+            response = await channel.handle_login(request)
+
+        assert response.status == 302
+        mock_log_event.assert_called_once_with(
+            "frontend_login_success",
+            component="web",
+            user_id="user-1",
+            username="alice",
+            remote="127.0.0.1",
+        )
+
+    @pytest.mark.asyncio
+    async def test_handle_login_logs_failure_event(self):
+        bus = MessageBus()
+        user_store = MagicMock()
+        user_store.verify_password.return_value = False
+
+        channel = WebChannel({}, bus, user_store=user_store)
+
+        request = MagicMock()
+        request.post = AsyncMock(return_value={"username": "alice", "password": "bad"})
+        request.remote = "127.0.0.1"
+
+        with patch("caduceus.channels.web.log_event") as mock_log_event:
+            response = await channel.handle_login(request)
+
+        assert response.status == 401
+        mock_log_event.assert_called_once_with(
+            "frontend_login_failed",
+            component="web",
+            username="alice",
+            remote="127.0.0.1",
+        )
+
 
 class TestTelegramChannel:
     """Test TelegramChannel implementation."""
