@@ -25,11 +25,18 @@ import subprocess
 import sys
 import asyncio
 import re
+import importlib
 from datetime import datetime, timezone
 from pathlib import Path
 
 from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
+from telegram.ext import (
+    ApplicationBuilder,
+    ContextTypes,
+    CommandHandler,
+    MessageHandler,
+    filters,
+)
 
 
 # --- CONFIG ---
@@ -46,6 +53,20 @@ except FileNotFoundError:
 
 TOKEN = CONFIG["telegram_token"]
 AUTHORIZED = set(CONFIG["authorized_users"])
+digest_scheduler = None
+
+
+def _load_module(name):
+    return importlib.import_module(name)
+
+
+common = _load_module("handlers.common")
+feed_handler = _load_module("handlers.feed_handler")
+voice_handler = _load_module("handlers.voice_handler")
+document_handler = _load_module("handlers.document_handler")
+router = _load_module("handlers.router")
+priority_handler = _load_module("handlers.priority_handler")
+digest_push = _load_module("handlers.digest_push")
 
 
 # --- MACHINE REGISTRY ---
@@ -170,7 +191,13 @@ def run_on_machine(machine, cmd):
     host = machine["host"]
     ssh_user = machine.get("ssh_user", "")
     target = f"{ssh_user}@{host}" if ssh_user else host
-    ssh_cmd = ["ssh", "-o", "ConnectTimeout=5", target, f"cd {shlex.quote(str(repo))} && {' '.join(shlex.quote(c) for c in cmd)}"]
+    ssh_cmd = [
+        "ssh",
+        "-o",
+        "ConnectTimeout=5",
+        target,
+        f"cd {shlex.quote(str(repo))} && {' '.join(shlex.quote(c) for c in cmd)}",
+    ]
 
     result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=30)
     return result.stdout.strip(), result.stderr.strip(), result.returncode
@@ -258,7 +285,9 @@ def create_order(machine_name, machine_config, order_text, chat_id):
     if not is_local(machine_config):
         return None
 
-    orders_dir = machine_config["repo_path"] / ".sisyphus" / "notepads" / "galaxy-orders"
+    orders_dir = (
+        machine_config["repo_path"] / ".sisyphus" / "notepads" / "galaxy-orders"
+    )
     orders_dir.mkdir(parents=True, exist_ok=True)
 
     order = {
@@ -279,26 +308,139 @@ def create_order(machine_name, machine_config, order_text, chat_id):
     return str(order_file)
 
 
+def create_enhanced_order(
+    machine_name, machine_config, order_text, chat_id, metadata=None
+):
+    if not is_local(machine_config):
+        return None
+    orders_dir = (
+        machine_config["repo_path"] / ".sisyphus" / "notepads" / "galaxy-orders"
+    )
+    order = common.build_order(machine_name, order_text, metadata=metadata)
+    order_file = common.write_order(orders_dir, order, message_id=chat_id)
+    return str(order_file)
+
+
+def _build_order_metadata(order_text, project_name):
+    temp_order = common.build_order(
+        DEFAULT_MACHINE, order_text, {"project": project_name}
+    )
+    clean_text, temp_order = priority_handler.apply_priority_and_schedule(
+        order_text, temp_order
+    )
+    try:
+        priority_handler.validate_order(temp_order)
+    except Exception:
+        temp_order = common.build_order(
+            DEFAULT_MACHINE, clean_text, {"project": project_name}
+        )
+    return clean_text, {
+        "priority": temp_order.get("priority", "normal"),
+        "project": temp_order.get("project", project_name),
+        "media": temp_order.get("media", None),
+        "scheduled_for": temp_order.get("scheduled_for"),
+    }
+
+
+async def _submit_text_order_from_media(update: Update, order_text: str):
+    if update.message is None or update.effective_chat is None:
+        return
+    name = DEFAULT_MACHINE
+    machine = MACHINES[name]
+    project_name, routed_text = router.route_text(order_text, CONFIG)
+    clean_text, order_meta = _build_order_metadata(routed_text, project_name)
+    order_file = create_enhanced_order(
+        name,
+        machine,
+        clean_text,
+        update.effective_chat.id,
+        metadata=order_meta,
+    )
+    if order_file:
+        pending_orders[order_file] = {
+            "machine": name,
+            "chat_id": update.effective_chat.id,
+            "order_text": clean_text,
+        }
+        await update.message.reply_text(
+            f"\U0001f4e1 \u2192 *{name}*", parse_mode="Markdown"
+        )
+
+
 async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Any plain text message = order for default machine."""
+    if (
+        update.effective_user is None
+        or update.message is None
+        or update.effective_chat is None
+    ):
+        return
     if not is_authorized(update.effective_user.id):
         return
 
-    order_text = update.message.text.strip()
+    order_text = (update.message.text or "").strip()
     if not order_text:
         return
 
     name = DEFAULT_MACHINE
     machine = MACHINES[name]
-    order_file = create_order(name, machine, order_text, update.effective_chat.id)
+
+    handled = await feed_handler.maybe_handle_github_reference(
+        update, ctx, CONFIG, machine
+    )
+    if handled:
+        return
+
+    project_name, routed_text = router.route_text(order_text, CONFIG)
+    clean_text, order_meta = _build_order_metadata(routed_text, project_name)
+    order_file = create_enhanced_order(
+        name,
+        machine,
+        clean_text,
+        update.effective_chat.id,
+        metadata=order_meta,
+    )
 
     if order_file:
         pending_orders[order_file] = {
             "machine": name,
             "chat_id": update.effective_chat.id,
-            "order_text": order_text,
+            "order_text": clean_text,
         }
-        await update.message.reply_text(f"\U0001f4e1 \u2192 *{name}*", parse_mode="Markdown")
+        await update.message.reply_text(
+            f"\U0001f4e1 \u2192 *{name}*", parse_mode="Markdown"
+        )
+
+
+async def handle_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user is None:
+        return
+    if not is_authorized(update.effective_user.id):
+        return
+    await voice_handler.handle_voice(
+        update,
+        ctx,
+        CONFIG,
+        lambda text: _submit_text_order_from_media(update, text),
+    )
+
+
+async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user is None:
+        return
+    if not is_authorized(update.effective_user.id):
+        return
+    machine = MACHINES[DEFAULT_MACHINE]
+    await document_handler.handle_photo(update, ctx, CONFIG, machine)
+
+
+async def handle_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user is None:
+        return
+    if not is_authorized(update.effective_user.id):
+        return
+    machine = MACHINES[DEFAULT_MACHINE]
+    await document_handler.handle_pdf(update, ctx, CONFIG, machine)
 
 
 # --- COMMANDS ---
@@ -306,6 +448,8 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Get machine status. Usage: /status [machine|all]"""
+    if update.effective_user is None or update.message is None:
+        return
     user_id = update.effective_user.id
     if not is_authorized(user_id):
         await update.message.reply_text(
@@ -353,6 +497,8 @@ async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_concerns(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Get Stargazer concerns. Usage: /concerns [machine|all]"""
+    if update.effective_user is None or update.message is None:
+        return
     if not is_authorized(update.effective_user.id):
         return
 
@@ -385,6 +531,12 @@ async def cmd_concerns(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_order(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Send order. Usage: /order [machine] <message> or /order all <message>"""
+    if (
+        update.effective_user is None
+        or update.message is None
+        or update.effective_chat is None
+    ):
+        return
     if not is_authorized(update.effective_user.id):
         return
 
@@ -420,32 +572,22 @@ async def cmd_order(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     delivered = []
     for name, machine in targets:
         if is_local(machine):
-            orders_dir = (
-                machine["repo_path"] / ".sisyphus" / "notepads" / "galaxy-orders"
+            project_name, routed_text = router.route_text(order_text, CONFIG)
+            clean_text, order_meta = _build_order_metadata(routed_text, project_name)
+            order_file = create_enhanced_order(
+                name,
+                machine,
+                clean_text,
+                update.effective_chat.id,
+                metadata=order_meta,
             )
-            orders_dir.mkdir(parents=True, exist_ok=True)
-
-            order = {
-                "type": "galaxy_order",
-                "from": "galaxy-gazer",
-                "target": name,
-                "command": "general",
-                "payload": order_text,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "acknowledged": False,
-            }
-
-            ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-            order_file = orders_dir / f"{ts}.json"
-            with open(order_file, "w") as f:
-                json.dump(order, f, indent=2)
             delivered.append(name)
 
             # Track for acknowledgment polling
-            pending_orders[str(order_file)] = {
+            pending_orders[order_file] = {
                 "machine": name,
                 "chat_id": update.effective_chat.id,
-                "order_text": order_text,
+                "order_text": clean_text,
             }
         else:
             # Remote: SSH write (future — for now, note it)
@@ -459,6 +601,8 @@ async def cmd_order(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_machines(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """List registered machines."""
+    if update.effective_user is None or update.message is None:
+        return
     if not is_authorized(update.effective_user.id):
         return
 
@@ -474,6 +618,8 @@ async def cmd_machines(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Show available commands."""
+    if update.effective_user is None or update.message is None:
+        return
     if not is_authorized(update.effective_user.id):
         return
 
@@ -525,7 +671,7 @@ async def poll_outbox_messages(app):
             if not is_local(machine_config):
                 continue  # Skip remote machines for now
 
-            repo = machine_config["repo_path"]
+            repo = Path(machine_config["repo_path"])
             outbox_dir = repo / ".sisyphus/notepads/galaxy-outbox"
 
             if not outbox_dir.exists():
@@ -635,10 +781,13 @@ async def poll_order_acknowledgments(app):
                     # Look for response notepad matching this order
                     machine_config = MACHINES.get(machine)
                     if machine_config and is_local(machine_config):
-                        repo = machine_config["repo_path"]
+                        repo = Path(machine_config["repo_path"])
                         order_ts = Path(order_file).stem
-                        matching_response = repo / f".sisyphus/notepads/galaxy-order-response-{order_ts}.md"
-                        
+                        matching_response = (
+                            repo
+                            / f".sisyphus/notepads/galaxy-order-response-{order_ts}.md"
+                        )
+
                         # Fall back to latest response if exact match not found
                         response_file = None
                         if matching_response.exists():
@@ -744,6 +893,14 @@ async def post_init(app):
     """Called after bot initialization - start background tasks."""
     asyncio.create_task(poll_order_acknowledgments(app))
     asyncio.create_task(poll_outbox_messages(app))
+    global digest_scheduler
+    digest_scheduler = digest_push.setup_digest_scheduler(
+        CONFIG, app.bot, _load_latest_digest
+    )
+
+
+def _load_latest_digest():
+    return {"patterns": [], "references": [], "actions": []}
 
 
 def main():
@@ -760,12 +917,14 @@ def main():
     app.add_handler(CommandHandler("concerns", cmd_concerns))
     app.add_handler(CommandHandler("order", cmd_order))
     app.add_handler(CommandHandler("machines", cmd_machines))
+    app.add_handler(MessageHandler(filters.VOICE, handle_voice))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(MessageHandler(filters.Document.PDF, handle_document))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     machine_list = ", ".join(MACHINES.keys())
     print(f"\U0001f30c Galaxy bot online \u2014 default: {DEFAULT_MACHINE}")
     print(f"\U0001f4de Any text message = order")
-
 
     app.run_polling()
 

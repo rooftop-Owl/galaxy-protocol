@@ -1,5 +1,9 @@
 # Phase 2 Transition Plan
 
+> Note: This document is for Caduceus infrastructure transition only.
+> Multimodal ingestion features are tracked separately in
+> `prop-2026-02-13-galaxy-protocol-phase3-revised`.
+
 ## Current State: Phase 1 (Local Submodule Testing)
 
 Caduceus Gateway is **production-verified** in Phase 1 configuration:
