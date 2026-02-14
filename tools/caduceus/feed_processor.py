@@ -325,7 +325,7 @@ async def _spawn_deepwiki_enrichment(
         clean_env = {
             k: v
             for k, v in os.environ.items()
-            if k not in ("OPENCODE_SESSION_ID", "OPENCODE_SERVER_URL")
+            if k != "OPENCODE" and not k.startswith("OPENCODE_")
         }
         process = await asyncio.create_subprocess_exec(
             "opencode",
