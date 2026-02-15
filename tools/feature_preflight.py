@@ -29,6 +29,17 @@ def _check_command(name):
     return which(name) is not None
 
 
+def _check_opencode_runtime():
+    try:
+        runtime = importlib.import_module("opencode_runtime")
+        binary, error = runtime.resolve_opencode_binary()
+        if binary:
+            return True, binary
+        return False, error or "opencode binary unavailable"
+    except Exception as exc:
+        return False, str(exc)
+
+
 def main():
     config = _load_config()
     features = config.get("features", {})
@@ -36,6 +47,7 @@ def main():
     checks = []
 
     if features.get("GALAXY_DEEPWIKI_ENABLED", False):
+        checks.append(("opencode_cli", *_check_opencode_runtime()))
         checks.append(("deepwiki_client", *_check_import("deepwiki_client")))
 
     if features.get("GALAXY_VOICE_ENABLED", False):
