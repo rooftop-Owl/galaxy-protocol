@@ -27,6 +27,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 session_tracker = importlib.import_module("session_tracker")
 detect_repo_root = session_tracker.detect_repo_root
 
+opencode_runtime = importlib.import_module("opencode_runtime")
+resolve_opencode_binary = opencode_runtime.resolve_opencode_binary
+
 try:
     audit_module = importlib.import_module("audit")
     log_event = audit_module.log_event
@@ -235,12 +238,29 @@ async def galaxy_execute(order_id: str) -> dict[str, object]:
             claimed_file.rename(order_file)
             return {"error": "Empty payload", "order_id": order_id}
 
+        opencode_binary, resolution_error = resolve_opencode_binary()
+        if not opencode_binary:
+            claimed_file.rename(order_file)
+            log_event(
+                "order_execution_unavailable",
+                {
+                    "order_id": order_id,
+                    "reason": resolution_error,
+                },
+                severity="error",
+            )
+            return {
+                "error": f"OpenCode runtime unavailable: {resolution_error}",
+                "order_id": order_id,
+                "status": "unavailable",
+            }
+
         print(f"[Execute] Order {order_id}: {payload[:50]}...", file=sys.stderr)
 
         # Execute via opencode run --attach (full agent reasoning)
         result = subprocess.run(
             [
-                "opencode",
+                opencode_binary,
                 "run",
                 "--attach",
                 OPENCODE_SERVER,
@@ -306,9 +326,7 @@ async def galaxy_execute(order_id: str) -> dict[str, object]:
             else f"⚠️ <b>Order Failed</b>\n\n<code>{payload[:80]}</code>\n\nCheck response file for details."
         )
 
-        outbox_file = (
-            OUTBOX_DIR / f"{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.json"
-        )
+        outbox_file = OUTBOX_DIR / f"{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.json"
         outbox_file.write_text(
             json.dumps(
                 {
@@ -381,9 +399,7 @@ async def galaxy_execute(order_id: str) -> dict[str, object]:
 
 
 @mcp.tool()
-async def galaxy_acknowledge(
-    order_id: str, skip_execution: bool = False
-) -> dict[str, object]:
+async def galaxy_acknowledge(order_id: str, skip_execution: bool = False) -> dict[str, object]:
     """
     Acknowledge an order without executing (for manual handling).
 
@@ -502,9 +518,7 @@ async def galaxy_status() -> dict[str, object]:
         "opencode_healthy": opencode_healthy,
         "started_at": server_state["started_at"],
         "standby_session": standby_info,
-        "execution_mode": "Phase D2: Orchestrated Session"
-        if standby_active
-        else "Phase D1: Fresh Sessions",
+        "execution_mode": "Phase D2: Orchestrated Session" if standby_active else "Phase D1: Fresh Sessions",
     }
 
 

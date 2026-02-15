@@ -31,6 +31,9 @@ except ImportError:
 
 log_response = response_logger.log_response
 
+opencode_runtime = importlib.import_module("opencode_runtime")
+resolve_opencode_binary = opencode_runtime.resolve_opencode_binary
+
 session_tracker = importlib.import_module("session_tracker")
 detect_repo_root = session_tracker.detect_repo_root
 log_event = session_tracker.log_event
@@ -193,9 +196,7 @@ def process_order(order_file, server_url):
         # Log failure (extract order/payload safely)
         latency_ms = int((time.time() - start_time) * 1000)
         try:
-            order_data = (
-                json.loads(claimed_file.read_text()) if claimed_file.exists() else {}
-            )
+            order_data = json.loads(claimed_file.read_text()) if claimed_file.exists() else {}
             log_response(
                 order_id=order_id,
                 status="failed",
@@ -241,10 +242,14 @@ def _save_session_id(session_id):
 
 
 def call_agent(payload, server_url):
+    _ = server_url
     session_id = _load_session_id()
+    opencode_binary, resolution_error = resolve_opencode_binary()
+    if not opencode_binary:
+        return f"Agent execution unavailable: {resolution_error}"
 
     def _run_opencode(prompt, sid=None):
-        cmd = ["opencode", "run", "--format", "json"]
+        cmd = [opencode_binary, "run", "--format", "json"]
         if sid:
             cmd.extend(["--session", sid])
         cmd.append(prompt)
@@ -261,9 +266,7 @@ def call_agent(payload, server_url):
 
         if session_id and result.returncode != 0:
             stderr = (result.stderr or "").lower()
-            if "session" in stderr and (
-                "not found" in stderr or "invalid" in stderr or "expired" in stderr
-            ):
+            if "session" in stderr and ("not found" in stderr or "invalid" in stderr or "expired" in stderr):
                 log_event(
                     "backend_session_invalid",
                     component="hermes",
@@ -317,10 +320,7 @@ def bootstrap_session(server_url):
         )
         return existing_session_id
 
-    prompt = (
-        "[Galaxy Bootstrap] Initialize persistent session for Hermes. "
-        "Reply with exactly: READY"
-    )
+    prompt = "[Galaxy Bootstrap] Initialize persistent session for Hermes. Reply with exactly: READY"
     result = call_agent(prompt, server_url)
     new_session_id = _load_session_id()
 
@@ -478,9 +478,7 @@ def notify_deactivation():
     OUTBOX_DIR.mkdir(parents=True, exist_ok=True)
     uptime = "unknown"
     if stats["started_at"]:
-        delta = datetime.now(timezone.utc) - datetime.fromisoformat(
-            str(stats["started_at"])
-        )
+        delta = datetime.now(timezone.utc) - datetime.fromisoformat(str(stats["started_at"]))
         hours, remainder = divmod(int(delta.total_seconds()), 3600)
         minutes, _ = divmod(remainder, 60)
         uptime = "%dh %dm" % (hours, minutes)
@@ -490,8 +488,7 @@ def notify_deactivation():
         "type": "notification",
         "severity": "info",
         "from": "Hermes",
-        "message": "Hermes Offline - %d delivered - %d failed - %s"
-        % (processed, failed, uptime),
+        "message": "Hermes Offline - %d delivered - %d failed - %s" % (processed, failed, uptime),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "sent": False,
     }
@@ -505,9 +502,7 @@ def notify_deactivation():
 
 def main():
     parser = argparse.ArgumentParser(description="Hermes - Galaxy Messenger")
-    parser.add_argument(
-        "--interval", type=int, default=30, help="Poll interval in seconds"
-    )
+    parser.add_argument("--interval", type=int, default=30, help="Poll interval in seconds")
     parser.add_argument(
         "--server",
         type=str,

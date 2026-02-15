@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-import os
+import importlib
 import json
 import logging
 import re
-import shutil
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,6 +13,10 @@ from urllib.parse import urlparse
 
 import trafilatura
 from newspaper import Article
+
+opencode_runtime = importlib.import_module("opencode_runtime")
+resolve_opencode_binary = opencode_runtime.resolve_opencode_binary
+sanitize_opencode_env = opencode_runtime.sanitize_opencode_env
 
 logger = logging.getLogger(__name__)
 
@@ -190,36 +193,6 @@ def _outbox_dir_from_references(references_dir: Path) -> Path:
     return references_dir.parent / "notepads" / "galaxy-outbox"
 
 
-def _resolve_opencode_binary() -> tuple[str | None, str | None]:
-    override = os.environ.get("GALAXY_OPENCODE_BIN", "").strip()
-    if override:
-        expanded = str(Path(override).expanduser())
-        if Path(expanded).is_file() and os.access(expanded, os.X_OK):
-            return expanded, None
-        resolved_override = shutil.which(override)
-        if resolved_override:
-            return resolved_override, None
-        return (
-            None,
-            (
-                f"GALAXY_OPENCODE_BIN is set to '{override}' but no executable was found. "
-                "Set it to an absolute opencode binary path."
-            ),
-        )
-
-    resolved_default = shutil.which("opencode")
-    if resolved_default:
-        return resolved_default, None
-
-    return (
-        None,
-        (
-            "opencode CLI is not available on PATH for the Caduceus runtime. "
-            "Install OpenCode CLI or set GALAXY_OPENCODE_BIN to an absolute binary path."
-        ),
-    )
-
-
 def _write_failure_notification(references_dir: Path, message: str, chat_id: int | None = None) -> None:
     outbox_dir = _outbox_dir_from_references(references_dir)
     outbox_dir.mkdir(parents=True, exist_ok=True)
@@ -322,7 +295,7 @@ async def _spawn_deepwiki_enrichment(
     repo_root = references_dir.parent.parent
     prompt = _build_enrichment_prompt(repo_url, owner, repo, reference_path)
     initial_reference = reference_path.read_text(encoding="utf-8")
-    opencode_binary, resolution_error = _resolve_opencode_binary()
+    opencode_binary, resolution_error = resolve_opencode_binary()
     if not opencode_binary:
         _write_failure_notification(
             references_dir,
@@ -332,7 +305,7 @@ async def _spawn_deepwiki_enrichment(
         return False
 
     try:
-        clean_env = {k: v for k, v in os.environ.items() if k != "OPENCODE" and not k.startswith("OPENCODE_")}
+        clean_env = sanitize_opencode_env()
         process = await asyncio.create_subprocess_exec(
             opencode_binary,
             "run",

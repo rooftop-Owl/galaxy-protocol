@@ -109,8 +109,11 @@ async def test_process_feed_skips_enrichment_when_disabled(
 
 
 @pytest.mark.asyncio
-@patch("caduceus.feed_processor.shutil.which", return_value=None)
-async def test_spawn_enrichment_reports_missing_opencode(_mock_which, tmp_path):
+@patch(
+    "caduceus.feed_processor.resolve_opencode_binary",
+    return_value=(None, "opencode CLI is not available on PATH for the Galaxy runtime."),
+)
+async def test_spawn_enrichment_reports_missing_opencode(_mock_resolve, tmp_path):
     references_dir = tmp_path / ".sisyphus" / "references"
     references_dir.mkdir(parents=True, exist_ok=True)
     reference_path = references_dir / "ref.md"
