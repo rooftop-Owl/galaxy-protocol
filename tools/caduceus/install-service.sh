@@ -39,8 +39,29 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+OPENCODE_BIN="${GALAXY_OPENCODE_BIN:-}"
+if [ -z "$OPENCODE_BIN" ]; then
+    OPENCODE_BIN="$(command -v opencode 2>/dev/null || true)"
+fi
+if [ -z "$OPENCODE_BIN" ] && [ -n "${SUDO_USER:-}" ]; then
+    USER_CANDIDATE="/home/${SUDO_USER}/.opencode/bin/opencode"
+    if [ -x "$USER_CANDIDATE" ]; then
+        OPENCODE_BIN="$USER_CANDIDATE"
+    fi
+fi
+
+if [ -n "$OPENCODE_BIN" ]; then
+    echo "✅ OpenCode binary detected: $OPENCODE_BIN"
+else
+    echo "⚠️  Could not detect OpenCode binary."
+    echo "   Service will use PATH lookup; set GALAXY_OPENCODE_BIN later if needed."
+fi
+
 # Substitute paths
-sed "s|WorkingDirectory=.*|WorkingDirectory=$PROJECT_ROOT|g" "$SERVICE_SRC" > "$SERVICE_DST"
+sed \
+  -e "s|WorkingDirectory=.*|WorkingDirectory=$PROJECT_ROOT|g" \
+  -e "s|^Environment=GALAXY_OPENCODE_BIN=.*|Environment=GALAXY_OPENCODE_BIN=$OPENCODE_BIN|g" \
+  "$SERVICE_SRC" > "$SERVICE_DST"
 
 echo "✅ Service file installed to $SERVICE_DST"
 

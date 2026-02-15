@@ -11,6 +11,9 @@ ExecStart=/usr/bin/python3 galaxy-protocol/tools/caduceus/gateway.py --config .g
 Restart=always
 RestartSec=10
 Environment=PYTHONUNBUFFERED=1
+# Optional deterministic OpenCode binary pin for DeepWiki enrichment.
+# install-service.sh auto-populates this when it can discover the binary.
+Environment=GALAXY_OPENCODE_BIN=
 
 [Install]
 WantedBy=multi-user.target

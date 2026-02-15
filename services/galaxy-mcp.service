@@ -11,6 +11,7 @@ ExecStart=/usr/bin/python3 tools/galaxy/galaxy_mcp.py
 Restart=always
 RestartSec=10
 Environment=PYTHONUNBUFFERED=1
+Environment=GALAXY_OPENCODE_BIN=
 
 # Galaxy MCP requires opencode serve to be running
 # Start it manually: opencode serve --port 4096

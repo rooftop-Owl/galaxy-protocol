@@ -13,6 +13,7 @@ StandardError=journal
 
 # Environment
 Environment="PATH=/home/doyoon/.opencode/bin:/home/doyoon/.bun/bin:/home/doyoon/anaconda3/bin:/home/doyoon/.local/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="GALAXY_OPENCODE_BIN=/home/doyoon/.opencode/bin/opencode"
 Environment="PYTHONUNBUFFERED=1"
 
 # Resource limits
