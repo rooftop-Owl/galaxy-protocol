@@ -13,9 +13,9 @@ pip install -r galaxy-protocol/tools/requirements.txt
 ## What This Module Provides
 
 - **Agent**: `star-curator`
-- **Commands**: `/galaxy-standby`, `/stars`, `/feed`
+- **Commands**: `/galaxy-standby`, `/stars`, `/feed`, `/paper`
 - **Rule**: `galaxy-orders`
-- **Runtime components**: `tools/caduceus/gateway.py`, `tools/hermes.py`, `tools/feed_processor.py`, `tools/handlers/*.py`
+- **Runtime components**: `tools/caduceus/gateway.py`, `tools/hermes.py`, `tools/feed_processor.py`, `tools/handlers/*.py` (incl. `paper_handler.py`)
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -25,6 +25,7 @@ pip install -r galaxy-protocol/tools/requirements.txt
 | Telegram integration | `tools/caduceus/channels/telegram.py` | Bot channel adapter |
 | Order processing | `tools/hermes.py` | Polling and execution loop |
 | Feed capture | `tools/feed_processor.py` | URL extraction and indexing |
+| Paper ingestion | `tools/handlers/paper_handler.py` | DOI detection + Zotero bridge |
 | Config | `.galaxy/config.json` | Token, user, machine mapping |
 
 ## Core Flows
@@ -32,6 +33,7 @@ pip install -r galaxy-protocol/tools/requirements.txt
 Remote Loop: Channel -> MessageBus -> Hermes executor -> opencode run -> response
 Star Loop: /stars -> classify/sync -> optional auto-feed to references
 Feed Loop: /feed URL -> extract -> markdown reference -> index update
+Paper Loop: /paper DOI/URL -> extract DOI -> CrossRef resolve -> Zotero add + auto-tag + auto-classify
 ```
 
 ## Module Management

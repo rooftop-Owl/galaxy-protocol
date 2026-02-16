@@ -25,6 +25,7 @@
   },
   "features": {
     "GALAXY_DEEPWIKI_ENABLED": false,
+    "GALAXY_ZOTERO_ENABLED": false,
     "GALAXY_VOICE_ENABLED": false,
     "GALAXY_IMAGE_PDF_ENABLED": false,
     "GALAXY_MULTI_PROJECT_ENABLED": false,
