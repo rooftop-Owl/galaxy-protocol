@@ -63,6 +63,18 @@ STOPWORDS = {
 RELEVANCE_PLACEHOLDER = "Review and connect this reference to current astraeus or galaxy-protocol efforts."
 PATTERNS_PLACEHOLDER = "Identify any concrete patterns or practices worth adopting."
 
+# Known DeepWiki error patterns that indicate a failed analysis baked into content.
+# When these appear in "Relevance" or "Patterns" sections, the enrichment produced
+# garbage — replace with clean markers instead of keeping error text.
+DEEPWIKI_ERROR_PATTERNS = [
+    "Repository not found",
+    "Visit https://deepwiki.com to index it",
+    "Error processing question",
+    "Requested repos:",
+]
+
+NOT_ENRICHED_MARKER = "DeepWiki analysis unavailable for this repository."
+
 
 def _to_ascii(value: str) -> str:
     return unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
@@ -233,6 +245,69 @@ def _build_enrichment_prompt(repo_url: str, owner: str, repo: str, reference_pat
     )
 
 
+def _contains_deepwiki_errors(content: str) -> bool:
+    """Check if reference content contains known DeepWiki error patterns.
+
+    These appear when the enrichment agent writes error messages from DeepWiki
+    directly into the reference file instead of meaningful analysis.
+    """
+    return any(pattern in content for pattern in DEEPWIKI_ERROR_PATTERNS)
+
+
+def _clean_failed_enrichment(reference_path: Path) -> None:
+    """Replace DeepWiki error content in reference with clean markers.
+
+    Preserves header and Summary/Key Insights; replaces Relevance and
+    Applicable Patterns sections with NOT_ENRICHED_MARKER.
+    """
+    content = reference_path.read_text(encoding="utf-8")
+
+    # Replace Relevance section content (between ## Relevance and next ##)
+    content = re.sub(
+        r"""(## Relevance to Our Work\n\n).*?(\n\n## )""",
+        rf"\1{NOT_ENRICHED_MARKER}\2",
+        content,
+        flags=re.DOTALL,
+    )
+    # Replace Applicable Patterns section content (between ## Applicable and EOF or next ##)
+    content = re.sub(
+        r"""(## Applicable Patterns\n\n).*""",
+        rf"\1- {NOT_ENRICHED_MARKER}\n",
+        content,
+        flags=re.DOTALL,
+    )
+
+    reference_path.write_text(content, encoding="utf-8")
+
+
+def _update_index_analysis(references_dir: Path, reference_path: Path, status: str) -> None:
+    """Update the analysis field in index.json for a specific reference.
+
+    Args:
+        references_dir: Path to references directory
+        reference_path: Path to the reference .md file
+        status: New analysis status (deepwiki-enriched, deepwiki-not-indexed, etc.)
+    """
+    index_path = references_dir / "index.json"
+    if not index_path.exists():
+        return
+
+    try:
+        index_data = json.loads(index_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return
+
+    file_name = reference_path.name
+    for ref in index_data.get("references", []):
+        if ref.get("file") == file_name:
+            ref["analysis"] = status
+            break
+    else:
+        return  # Reference not found in index
+
+    index_path.write_text(json.dumps(index_data, indent=2), encoding="utf-8")
+
+
 async def _monitor_enrichment_job(
     process: asyncio.subprocess.Process,
     references_dir: Path,
@@ -272,8 +347,11 @@ async def _monitor_enrichment_job(
             f"DeepWiki enrichment completed but reference file is unreadable for {owner}/{repo}: {exc}",
             chat_id,
         )
+        _update_index_analysis(references_dir, reference_path, "deepwiki-error")
         return
+
     placeholders_present = RELEVANCE_PLACEHOLDER in updated_reference or PATTERNS_PLACEHOLDER in updated_reference
+
     if updated_reference == initial_reference or placeholders_present:
         stdout_preview = stdout_bytes.decode("utf-8", errors="ignore").strip()
         stdout_preview = stdout_preview.splitlines()[-1] if stdout_preview else "No details"
@@ -282,6 +360,22 @@ async def _monitor_enrichment_job(
             (f"DeepWiki enrichment did not update {owner}/{repo} reference content. Details: {stdout_preview}"),
             chat_id,
         )
+        _update_index_analysis(references_dir, reference_path, "deepwiki-unchanged")
+        return
+
+    # Check for error patterns baked into content (e.g., "Repository not found")
+    if _contains_deepwiki_errors(updated_reference):
+        _clean_failed_enrichment(reference_path)
+        _write_failure_notification(
+            references_dir,
+            f"DeepWiki enrichment for {owner}/{repo} produced error content (repo likely not indexed). Cleaned reference.",
+            chat_id,
+        )
+        _update_index_analysis(references_dir, reference_path, "deepwiki-not-indexed")
+        return
+
+    # Enrichment succeeded with real content
+    _update_index_analysis(references_dir, reference_path, "deepwiki-enriched")
 
 
 async def _spawn_deepwiki_enrichment(

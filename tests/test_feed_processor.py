@@ -15,8 +15,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "tools"))
 feed_processor = importlib.import_module("caduceus.feed_processor")
 PATTERNS_PLACEHOLDER = feed_processor.PATTERNS_PLACEHOLDER
 RELEVANCE_PLACEHOLDER = feed_processor.RELEVANCE_PLACEHOLDER
+NOT_ENRICHED_MARKER = feed_processor.NOT_ENRICHED_MARKER
 process_feed = feed_processor.process_feed
 _spawn_deepwiki_enrichment = feed_processor._spawn_deepwiki_enrichment
+_contains_deepwiki_errors = feed_processor._contains_deepwiki_errors
+_clean_failed_enrichment = feed_processor._clean_failed_enrichment
+_update_index_analysis = feed_processor._update_index_analysis
 
 
 class DummyArticle:
@@ -111,9 +115,9 @@ async def test_process_feed_skips_enrichment_when_disabled(
 @pytest.mark.asyncio
 @patch(
     "caduceus.feed_processor.resolve_opencode_binary",
-    return_value=(None, "opencode CLI is not available on PATH for the Galaxy runtime."),
+    return_value=(None, "No agent CLI found. Searched PATH for: opencode, claude."),
 )
-async def test_spawn_enrichment_reports_missing_opencode(_mock_resolve, tmp_path):
+async def test_spawn_enrichment_reports_missing_binary(_mock_resolve, tmp_path):
     references_dir = tmp_path / ".sisyphus" / "references"
     references_dir.mkdir(parents=True, exist_ok=True)
     reference_path = references_dir / "ref.md"
@@ -136,7 +140,7 @@ async def test_spawn_enrichment_reports_missing_opencode(_mock_resolve, tmp_path
     payload = json.loads(outbox_files[0].read_text(encoding="utf-8"))
     assert payload["severity"] == "warning"
     assert payload["chat_id"] == 1791247114
-    assert "opencode CLI is not available on PATH" in payload["message"]
+    assert "No agent CLI found" in payload["message"]
 
 
 @pytest.mark.asyncio
@@ -216,3 +220,85 @@ async def test_process_feed_updates_existing_duplicate_reference(
 
     reference_text = Path(second["file_path"]).read_text(encoding="utf-8")
     assert "**Note**: second note" in reference_text
+
+
+# --- New tests for Fix 2 & Fix 3 ---
+
+
+def test_contains_deepwiki_errors_detects_not_indexed():
+    content = (
+        "## Relevance to Our Work\n\n"
+        "Error processing question: Repository not found. "
+        "Visit https://deepwiki.com to index it. Requested repos: foo/bar\n"
+    )
+    assert _contains_deepwiki_errors(content) is True
+
+
+def test_contains_deepwiki_errors_passes_clean_content():
+    content = (
+        "## Relevance to Our Work\n\n"
+        "This repo implements a useful pattern for state management.\n"
+    )
+    assert _contains_deepwiki_errors(content) is False
+
+
+def test_clean_failed_enrichment_replaces_error_sections(tmp_path):
+    ref_path = tmp_path / "ref.md"
+    ref_path.write_text(
+        "# Test Repo\n\n"
+        "**Source**: https://github.com/foo/bar\n\n"
+        "---\n\n"
+        "## Summary\n\nGood summary here.\n\n"
+        "## Key Insights\n\n- Insight one\n\n"
+        "## Relevance to Our Work\n\n"
+        "Error processing question: Repository not found. "
+        "Visit https://deepwiki.com to index it.\n\n"
+        "## Applicable Patterns\n\n"
+        "- Error processing question: Repository not found.\n",
+        encoding="utf-8",
+    )
+
+    _clean_failed_enrichment(ref_path)
+    cleaned = ref_path.read_text(encoding="utf-8")
+
+    assert "Repository not found" not in cleaned
+    assert NOT_ENRICHED_MARKER in cleaned
+    assert "Good summary here." in cleaned
+    assert "Insight one" in cleaned
+
+
+def test_update_index_analysis_sets_status(tmp_path):
+    references_dir = tmp_path
+    ref_path = references_dir / "test-ref.md"
+    ref_path.write_text("content", encoding="utf-8")
+
+    index_data = {
+        "version": "1.0",
+        "references": [
+            {"slug": "test-ref", "file": "test-ref.md", "analysis": "deepwiki-pending"},
+        ],
+    }
+    (references_dir / "index.json").write_text(json.dumps(index_data), encoding="utf-8")
+
+    _update_index_analysis(references_dir, ref_path, "deepwiki-enriched")
+
+    updated = json.loads((references_dir / "index.json").read_text(encoding="utf-8"))
+    assert updated["references"][0]["analysis"] == "deepwiki-enriched"
+
+
+def test_update_index_analysis_noop_when_ref_not_found(tmp_path):
+    references_dir = tmp_path
+    ref_path = references_dir / "missing-ref.md"
+
+    index_data = {
+        "version": "1.0",
+        "references": [
+            {"slug": "other-ref", "file": "other-ref.md", "analysis": "deepwiki-pending"},
+        ],
+    }
+    (references_dir / "index.json").write_text(json.dumps(index_data), encoding="utf-8")
+
+    _update_index_analysis(references_dir, ref_path, "deepwiki-enriched")
+
+    updated = json.loads((references_dir / "index.json").read_text(encoding="utf-8"))
+    assert updated["references"][0]["analysis"] == "deepwiki-pending"  # unchanged

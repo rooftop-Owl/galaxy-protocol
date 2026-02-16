@@ -5,10 +5,31 @@ import shutil
 from collections.abc import Mapping
 from pathlib import Path
 
+# Binary names to search, in priority order.
+# opencode is the primary CLI; claude is the Anthropic CLI fallback.
+_BINARY_NAMES = ["opencode", "claude"]
+
+_HOME_CANDIDATES = [
+    ".opencode/bin/opencode",
+    ".local/bin/opencode",
+    ".local/bin/claude",
+    ".claude/local/claude",
+]
+
 
 def resolve_opencode_binary(
     env: Mapping[str, str] | None = None,
 ) -> tuple[str | None, str | None]:
+    """Resolve an agent CLI binary (opencode or claude).
+
+    Resolution order:
+    1. GALAXY_OPENCODE_BIN env var (explicit override)
+    2. PATH lookup for opencode, then claude
+    3. Well-known home directory candidates
+
+    Returns:
+        (binary_path, None) on success, (None, error_message) on failure.
+    """
     runtime_env = env if env is not None else os.environ
     override = runtime_env.get("GALAXY_OPENCODE_BIN", "").strip()
     if override:
@@ -22,27 +43,31 @@ def resolve_opencode_binary(
             None,
             (
                 f"GALAXY_OPENCODE_BIN is set to '{override}' but no executable was found. "
-                "Set it to an absolute opencode binary path."
+                "Set it to an absolute path to opencode or claude CLI."
             ),
         )
 
-    resolved_default = shutil.which("opencode")
-    if resolved_default:
-        return resolved_default, None
+    # PATH lookup: try each binary name
+    for name in _BINARY_NAMES:
+        resolved = shutil.which(name)
+        if resolved:
+            return resolved, None
 
-    home_candidates = [
-        Path.home() / ".opencode/bin/opencode",
-        Path.home() / ".local/bin/opencode",
-    ]
-    for candidate in home_candidates:
+    # Well-known home directory candidates
+    home = Path.home()
+    for rel_path in _HOME_CANDIDATES:
+        candidate = home / rel_path
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return str(candidate), None
 
+    searched = ", ".join(_BINARY_NAMES)
+    paths_checked = ", ".join(str(home / p) for p in _HOME_CANDIDATES)
     return (
         None,
         (
-            "opencode CLI is not available on PATH for the Galaxy runtime. "
-            "Install OpenCode CLI or set GALAXY_OPENCODE_BIN to an absolute binary path."
+            f"No agent CLI found. Searched PATH for: {searched}. "
+            f"Also checked: {paths_checked}. "
+            "Install opencode or claude CLI, or set GALAXY_OPENCODE_BIN."
         ),
     )
 
