@@ -89,10 +89,22 @@ def _split_sentences(text: str) -> list[str]:
     return [s.strip() for s in sentences if len(s.strip()) > 20]
 
 
-def _slugify(value: str) -> str:
+def _slugify(value: str, max_length: int = 200) -> str:
+    """Convert value to URL-safe slug, truncated to max_length.
+    
+    Args:
+        value: String to slugify
+        max_length: Maximum slug length (default 200 to stay under 255-byte filename limit
+                    after adding date prefix and .md extension)
+    """
     ascii_value = _to_ascii(value).lower()
     ascii_value = re.sub(r"[^a-z0-9]+", "-", ascii_value)
     ascii_value = re.sub(r"-+", "-", ascii_value).strip("-")
+    
+    # Truncate to max_length, avoiding mid-word cuts
+    if len(ascii_value) > max_length:
+        ascii_value = ascii_value[:max_length].rsplit("-", 1)[0]
+    
     return ascii_value or "reference"
 
 
