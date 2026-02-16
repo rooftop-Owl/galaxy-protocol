@@ -18,6 +18,13 @@ opencode_runtime = importlib.import_module("opencode_runtime")
 resolve_opencode_binary = opencode_runtime.resolve_opencode_binary
 sanitize_opencode_env = opencode_runtime.sanitize_opencode_env
 
+# Session persistence for DeepWiki enrichment (reuse hermes session)
+try:
+    session_tracker = importlib.import_module("session_tracker")
+    _session_file_path = session_tracker.session_file_path
+except ImportError:
+    _session_file_path = None
+
 logger = logging.getLogger(__name__)
 
 # Stopwords for tag filtering (noise reduction)
@@ -62,6 +69,40 @@ STOPWORDS = {
 
 RELEVANCE_PLACEHOLDER = "Review and connect this reference to current astraeus or galaxy-protocol efforts."
 PATTERNS_PLACEHOLDER = "Identify any concrete patterns or practices worth adopting."
+
+
+def _load_enrichment_session_id(repo_root: Path) -> str | None:
+    """Load persistent session ID for DeepWiki enrichment."""
+    if not _session_file_path:
+        return None
+    try:
+        session_file = _session_file_path(repo_root)
+        if session_file.exists():
+            data = json.loads(session_file.read_text())
+            return data.get("session_id")
+    except (json.JSONDecodeError, OSError):
+        pass
+    return None
+
+
+def _save_enrichment_session_id(repo_root: Path, session_id: str) -> None:
+    """Save session ID for reuse by subsequent enrichment jobs."""
+    if not _session_file_path:
+        return
+    try:
+        session_file = _session_file_path(repo_root)
+        session_file.parent.mkdir(parents=True, exist_ok=True)
+        session_file.write_text(
+            json.dumps(
+                {
+                    "session_id": session_id,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                },
+                indent=2,
+            )
+        )
+    except OSError:
+        pass
 
 # Known DeepWiki error patterns that indicate a failed analysis baked into content.
 # When these appear in "Relevance" or "Patterns" sections, the enrichment produced
@@ -386,6 +427,21 @@ async def _monitor_enrichment_job(
         _update_index_analysis(references_dir, reference_path, "deepwiki-not-indexed")
         return
 
+    # Extract and save session ID for reuse
+    repo_root = references_dir.parent.parent
+    for line in (stdout_bytes.decode("utf-8", errors="ignore") or "").strip().split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            data = json.loads(line)
+            sid = data.get("sessionID")
+            if sid:
+                _save_enrichment_session_id(repo_root, sid)
+                break
+        except json.JSONDecodeError:
+            continue
+
     # Enrichment succeeded with real content
     _update_index_analysis(references_dir, reference_path, "deepwiki-enriched")
 
@@ -412,12 +468,16 @@ async def _spawn_deepwiki_enrichment(
 
     try:
         clean_env = sanitize_opencode_env()
+        
+        # Build command with session reuse
+        cmd = [opencode_binary, "run", "--format", "json"]
+        session_id = _load_enrichment_session_id(repo_root)
+        if session_id:
+            cmd.extend(["--session", session_id])
+        cmd.append(prompt)
+        
         process = await asyncio.create_subprocess_exec(
-            opencode_binary,
-            "run",
-            "--format",
-            "json",
-            prompt,
+            *cmd,
             cwd=str(repo_root),
             env=clean_env,
             stdout=asyncio.subprocess.PIPE,
