@@ -3,7 +3,7 @@
 Extracted from bot.py. Preserves ALL existing functionality:
 - Authorization checks
 - Order creation via filesystem protocol
-- Command handlers (/status, /concerns, /order, /machines, /help)
+- Command handlers (/status, /concerns, /order, /feed, /paper, /machines, /help)
 - Background polling (order acknowledgments, outbox messages)
 - Response formatting (compact emoji format)
 - Machine resolution (multi-machine support)
@@ -32,6 +32,7 @@ from telegram.ext import (
 from caduceus.channels.base import BaseChannel
 from caduceus.bus import MessageBus, OutboundMessage
 from caduceus.feed_processor import process_feed
+from tools.handlers.paper_handler import add_paper, format_result as format_paper_result
 
 logger = logging.getLogger(__name__)
 
@@ -485,6 +486,38 @@ class TelegramChannel(BaseChannel):
             f"✅ {title}\n🏷️ {tags}\n📁 references/{slug}.md",
         )
 
+
+    async def cmd_paper(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Add academic paper to Zotero. Usage: /paper <doi|url> [note]"""
+        if not self.is_authorized(update.effective_user.id):
+            return
+
+        if not ctx.args:
+            await update.message.reply_text(
+                "Usage: `/paper <doi|url> [note]`\n"
+                "Example: `/paper 10.1038/s41586-021-03819-2`\n"
+                "Example: `/paper https://arxiv.org/abs/2303.08774 great paper`",
+                parse_mode="Markdown",
+            )
+            return
+
+        identifier = ctx.args[0]
+        note = " ".join(ctx.args[1:]).strip() if len(ctx.args) > 1 else None
+        if note == "":
+            note = None
+
+        await update.message.reply_text(f"📜 Received: {identifier}")
+        asyncio.create_task(self._process_paper(update.effective_chat.id, identifier, note))
+
+    async def _process_paper(self, chat_id: int, identifier: str, note: str | None):
+        if not self.app:
+            return
+
+        machine = self.machines.get(self.default_machine)
+        config = machine.get("config", {}) if machine else {}
+        result = await add_paper(identifier, note=note, config=config)
+        await self.app.bot.send_message(chat_id, format_paper_result(result))
+
     async def cmd_order(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Send order. Usage: /order [machine] <message> or /order all <message>"""
         if not self.is_authorized(update.effective_user.id):
@@ -625,8 +658,9 @@ class TelegramChannel(BaseChannel):
             "`/status [machine|all]` — Machine status (git, tests, reports)\n"
             "`/concerns [machine|all]` — Latest Stargazer concerns\n"
             "`/feed <url> [note]` — Ingest reference into knowledge archive\n"
+            "`/paper <doi|url> [note]` — Add academic paper to Zotero\n"
             "`/stars <action>` — Manage GitHub star lists\n"
-            "`/order [machine|all] <msg>` — Send order to Stargazer\n"
+            "`/order [machine|all] <msg>` — Send order (progress updates every 60s, 10 min timeout)\n"
             "`/machines` — List registered machines\n"
             "`/help` — This message\n\n"
             f"📍 Machines: `{available}`\n"
@@ -895,6 +929,7 @@ class TelegramChannel(BaseChannel):
         self.app.add_handler(CommandHandler("status", self.cmd_status))
         self.app.add_handler(CommandHandler("concerns", self.cmd_concerns))
         self.app.add_handler(CommandHandler("feed", self.cmd_feed))
+        self.app.add_handler(CommandHandler("paper", self.cmd_paper))
         self.app.add_handler(CommandHandler("stars", self.cmd_stars))
         self.app.add_handler(CommandHandler("order", self.cmd_order))
         self.app.add_handler(CommandHandler("machines", self.cmd_machines))
