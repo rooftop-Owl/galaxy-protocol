@@ -121,9 +121,9 @@ async def add_paper(
     try:
         zotero.connect()
         if doi:
-            result = zotero.add_by_doi(doi, auto_tag=True, auto_classify=True)
+            result = zotero.add_by_doi(doi, auto_tag=True, auto_classify=False)
         else:
-            result = zotero.add_by_url(identifier, auto_tag=True, auto_classify=True)
+            result = zotero.add_by_url(identifier, auto_tag=True, auto_classify=False)
         return _structured_success(result, note)
     except Exception as exc:
         return {"error": f"Failed to add paper to Zotero: {exc}"}

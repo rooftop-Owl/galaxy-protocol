@@ -148,7 +148,7 @@ async def test_add_paper_success_with_doi(monkeypatch):
     assert calls["method"] == "doi"
     assert calls["identifier"] == "10.1038/s41586-021-03819-2"
     assert calls["auto_tag"] is True
-    assert calls["auto_classify"] is True
+    assert calls["auto_classify"] is False
     assert calls["collection_key"] is None
 
 
