@@ -113,16 +113,13 @@ def install_fake_zotero(monkeypatch, doi_result=None, url_result=None, raise_err
                 "auto_collections": ["Foundational Papers"],
             }
 
-    tools_mod = types.ModuleType("tools")
-    research_mod = types.ModuleType("tools.research")
-    zotero_mod = types.ModuleType("tools.research.zotero_web")
+    research_mod = types.ModuleType("research")
+    zotero_mod = types.ModuleType("research.zotero_web")
     zotero_mod.ZoteroWeb = FakeZoteroWeb
     research_mod.zotero_web = zotero_mod
-    tools_mod.research = research_mod
 
-    monkeypatch.setitem(sys.modules, "tools", tools_mod)
-    monkeypatch.setitem(sys.modules, "tools.research", research_mod)
-    monkeypatch.setitem(sys.modules, "tools.research.zotero_web", zotero_mod)
+    monkeypatch.setitem(sys.modules, "research", research_mod)
+    monkeypatch.setitem(sys.modules, "research.zotero_web", zotero_mod)
 
     return calls
 

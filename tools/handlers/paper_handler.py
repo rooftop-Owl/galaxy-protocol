@@ -113,9 +113,9 @@ async def add_paper(
         return {"error": "Could not detect DOI or paper URL from input"}
 
     try:
-        from tools.research.zotero_web import ZoteroWeb
+        from research.zotero_web import ZoteroWeb
     except ModuleNotFoundError:
-        return {"error": ("research-zotero module not available: cannot import tools.research.zotero_web")}
+        return {"error": ("research-zotero module not available: cannot import research.zotero_web")}
 
     zotero = ZoteroWeb()
     try:
