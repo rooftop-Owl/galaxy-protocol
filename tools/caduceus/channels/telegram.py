@@ -32,7 +32,7 @@ from telegram.ext import (
 from caduceus.channels.base import BaseChannel
 from caduceus.bus import MessageBus, OutboundMessage
 from caduceus.feed_processor import process_feed
-from tools.handlers.paper_handler import add_paper, format_result as format_paper_result
+from handlers.paper_handler import add_paper, format_result as format_paper_result
 
 logger = logging.getLogger(__name__)
 
