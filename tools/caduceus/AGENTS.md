@@ -18,7 +18,7 @@
 - `auth.jwt_secret`, `auth.db_path`, `auth.token_expiry_hours` for UserStore.
 - `telegram_token`, `authorized_users`, `machines`, `default_machine`, `poll_interval`.
 - `web.enabled`, `web.port`, `web.secure_cookies`.
-- `executor_timeout`, `executor_poll_interval` for HermesExecutor.
+- `executor_timeout` (default 600s = 10 min), `executor_poll_interval` for HermesExecutor.
 
 ## RUNTIME FLOW
 - Build MessageBus + channels; start channels before background loops.
@@ -39,3 +39,14 @@
 - No blocking file or subprocess I/O inside gateway loops.
 - Do not instantiate channels without config guardrails.
 - Avoid mixing channel-specific logic into gateway.
+
+## Liveness Notifications (galaxy-outbox/)
+
+Two notification patterns written during order execution:
+
+| Pattern | Written By | When | Routed By |
+|---------|-----------|------|-----------|
+| `processing-{order_id}.json` | HermesExecutor, hermes.py | Order claimed | poll_outbox_messages (chat_id routing) |
+| `heartbeat-{order_id}-{elapsed}.json` | HermesExecutor only | Every 60s after 1st minute | poll_outbox_messages (chat_id routing) |
+
+Both are cleaned up on order completion or timeout. Routing uses existing chat_id field at telegram.py:697-699.

@@ -5,6 +5,7 @@
   "telegram_token": "CHANGE-ME-get-from-BotFather",
   "authorized_users": [123456789],
   "poll_interval": 60,
+  "executor_timeout": 600,
   "default_machine": "lab-server",
   "machines": {
     "lab-server": {

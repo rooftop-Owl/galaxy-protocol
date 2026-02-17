@@ -22,7 +22,7 @@ executors/
 
 ## CONFIG KEYS
 - `orders_dir` (default `.sisyphus/notepads/galaxy-orders`).
-- `timeout` (default 180s).
+- `timeout` (default 600s).
 - `poll_interval` (default 1.0s).
 
 ## CONVENTIONS

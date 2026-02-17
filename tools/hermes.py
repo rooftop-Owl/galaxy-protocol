@@ -49,6 +49,16 @@ RESPONSE_DIR = REPO_ROOT / ".sisyphus/notepads"
 OUTBOX_DIR = REPO_ROOT / ".sisyphus/notepads/galaxy-outbox"
 HEARTBEAT_FILE = REPO_ROOT / ".sisyphus/notepads/galaxy-session-heartbeat.json"
 GALAXY_CONFIG = REPO_ROOT / ".galaxy/config.json"  # Config stays in parent
+
+# Read execution timeout from config (default: 600s = 10 min)
+_hermes_config = {}
+if GALAXY_CONFIG.exists():
+    try:
+        _hermes_config = json.loads(GALAXY_CONFIG.read_text())
+    except (json.JSONDecodeError, OSError):
+        pass
+EXECUTION_TIMEOUT = _hermes_config.get("executor_timeout", 600)
+
 SESSION_FILE = session_file_path(REPO_ROOT)
 CORRUPTED_DIR = REPO_ROOT / ".sisyphus/notepads/galaxy-orders-corrupted"
 
@@ -156,8 +166,31 @@ def process_order(order_file, server_url):
 
         print(f"  >> {payload[:80]}")
 
+        # Signal 2: Processing acknowledgment — notify user order was picked up
+        _processing_notif = OUTBOX_DIR / f"processing-{order_id}.json"
+        try:
+            OUTBOX_DIR.mkdir(parents=True, exist_ok=True)
+            _processing_notif.write_text(json.dumps({
+                "type": "notification",
+                "severity": "info",
+                "from": "Hermes",
+                "order_id": order_id,
+                "message": f"⏳ <b>Processing your order...</b>\n\n<code>{payload[:80]}</code>",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "sent": False,
+                "chat_id": order.get("chat_id"),
+            }, indent=2))
+        except OSError:
+            pass  # Non-fatal
+
         prompt = build_prompt(payload)
         response_text = call_agent(prompt, server_url)
+
+        # Cleanup processing notification after agent responds
+        try:
+            _processing_notif.unlink(missing_ok=True)
+        except OSError:
+            pass
 
         latency_ms = int((time.time() - start_time) * 1000)
 
@@ -257,7 +290,7 @@ def call_agent(payload, server_url):
             cmd,
             capture_output=True,
             text=True,
-            timeout=180,
+            timeout=EXECUTION_TIMEOUT,
             cwd=str(REPO_ROOT),
         )
 
@@ -304,7 +337,7 @@ def call_agent(payload, server_url):
             error = result.stderr[:500] if result.stderr else "Unknown error"
             return "Agent execution failed (exit %d)\n\n%s" % (result.returncode, error)
     except subprocess.TimeoutExpired:
-        return "Agent execution timed out (3 min limit)"
+        return f"Agent execution timed out ({EXECUTION_TIMEOUT}s limit)"
     except Exception as e:
         return "Agent connection error: %s" % e
 

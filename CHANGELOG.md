@@ -19,7 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 - hermes.py: Self-directed memory (reads history on demand, not pre-stuffed)
-- hermes.py: 10-minute timeout for long-running agent tasks
+- hermes.py, caduceus/executors/hermes.py, caduceus/gateway.py: Raised execution timeout 180s → 600s (10 min), configurable via `executor_timeout` in `.galaxy/config.json`. Note: galaxy_mcp.py D1 path intentionally remains at 300s (MCP tool call context).
 - hermes.py: Territory sandbox (workspace constraints in prompt)
 
 ### Fixed

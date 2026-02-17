@@ -120,5 +120,5 @@ class TestHermesExecutor:
     def test_default_config(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             ex = HermesExecutor({"orders_dir": str(Path(tmpdir) / "orders")})
-            assert ex.timeout == 180
+            assert ex.timeout == 600
             assert ex.poll_interval == 1.0

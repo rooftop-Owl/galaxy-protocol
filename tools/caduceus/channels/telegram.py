@@ -333,6 +333,12 @@ class TelegramChannel(BaseChannel):
         if not order_text:
             return
 
+        # Signal 1: Typing indicator — fire-and-forget, must not block order creation
+        try:
+            await update.message.chat.send_action("typing")
+        except Exception:
+            pass  # Typing indicator failure is non-fatal
+
         name = self.default_machine
         machine = self.machines[name]
         order_file = self.create_order(

@@ -175,7 +175,7 @@ async def run_gateway(config: dict[str, Any], test_mode: bool = False):
     repo_root = Path.cwd()  # Current directory for Phase 1 testing
     executor_config = {
         "orders_dir": str(repo_root / ".sisyphus" / "notepads" / "galaxy-orders"),
-        "timeout": config.get("executor_timeout", 180),
+        "timeout": config.get("executor_timeout", 600),
         "poll_interval": config.get("executor_poll_interval", 1.0),
     }
     executor = HermesExecutor(executor_config)
