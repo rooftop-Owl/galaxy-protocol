@@ -60,6 +60,7 @@ class TelegramChannel(BaseChannel):
         self.machines = self._load_machines(config)
         self.default_machine = config.get("default_machine", next(iter(self.machines)))
         self.poll_interval = config.get("poll_interval", 30)
+        self.config = config
 
         # Track pending orders for acknowledgment polling
         self.pending_orders: Dict[str, Dict] = {}
@@ -513,9 +514,7 @@ class TelegramChannel(BaseChannel):
         if not self.app:
             return
 
-        machine = self.machines.get(self.default_machine)
-        config = machine.get("config", {}) if machine else {}
-        result = await add_paper(identifier, note=note, config=config)
+        result = await add_paper(identifier, note=note, config=self.config)
         await self.app.bot.send_message(chat_id, format_paper_result(result))
 
     async def cmd_order(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
