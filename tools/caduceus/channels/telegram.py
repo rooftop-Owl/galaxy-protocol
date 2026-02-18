@@ -66,6 +66,7 @@ class TelegramChannel(BaseChannel):
         self.pending_orders: Dict[str, Dict] = {}
 
         self.app = None
+        self.digest_scheduler = None
 
     def resolve_user_identity(self, update) -> tuple:
         """Resolve Telegram user to (sender_id, chat_id, user_id).
@@ -112,11 +113,7 @@ class TelegramChannel(BaseChannel):
         return {
             name: {
                 "host": "localhost",
-                "repo_path": Path(
-                    config.get(
-                        "repo_path", str(Path(__file__).parent.parent.parent.parent)
-                    )
-                ),
+                "repo_path": Path(config.get("repo_path", str(Path(__file__).parent.parent.parent.parent))),
                 "machine_name": name,
             }
         }
@@ -194,9 +191,7 @@ class TelegramChannel(BaseChannel):
         repo = str(machine["repo_path"])
 
         if TelegramChannel.is_local(machine):
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, cwd=repo, timeout=30
-            )
+            result = subprocess.run(cmd, capture_output=True, text=True, cwd=repo, timeout=30)
             return result.stdout.strip(), result.stderr.strip(), result.returncode
 
         # Remote: SSH
@@ -219,24 +214,18 @@ class TelegramChannel(BaseChannel):
     def get_status_text(self, name: str, machine: Dict) -> str:
         """Build status text for a single machine."""
         try:
-            git_log, _, _ = self.run_on_machine(
-                machine, ["git", "log", "--oneline", "-5"]
-            )
+            git_log, _, _ = self.run_on_machine(machine, ["git", "log", "--oneline", "-5"])
         except Exception:
             git_log = "(git unavailable)"
 
         try:
-            git_status, _, _ = self.run_on_machine(
-                machine, ["git", "status", "--short"]
-            )
+            git_status, _, _ = self.run_on_machine(machine, ["git", "status", "--short"])
             git_status = git_status or "(clean)"
         except Exception:
             git_status = "(unknown)"
 
         try:
-            stdout, _, _ = self.run_on_machine(
-                machine, ["python3", "-m", "pytest", "tests/", "-q", "--tb=no"]
-            )
+            stdout, _, _ = self.run_on_machine(machine, ["python3", "-m", "pytest", "tests/", "-q", "--tb=no"])
             test_line = stdout.split("\n")[-1] if stdout else "unknown"
         except Exception:
             test_line = "(pytest unavailable)"
@@ -245,9 +234,7 @@ class TelegramChannel(BaseChannel):
         report_summary = "No reports"
         if self.is_local(machine):
             repo = machine["repo_path"]
-            reports = sorted(
-                glob.glob(str(repo / ".sisyphus/notepads/stargazer-*/meta.json"))
-            )
+            reports = sorted(glob.glob(str(repo / ".sisyphus/notepads/stargazer-*/meta.json")))
             if reports:
                 report_summary = f"{len(reports)} report(s)"
                 try:
@@ -255,9 +242,7 @@ class TelegramChannel(BaseChannel):
                         latest = json.load(f)
                     critical = latest.get("critical_concerns", 0)
                     warnings = latest.get("warning_concerns", 0)
-                    report_summary += (
-                        f"\nLatest: {critical} critical, {warnings} warnings"
-                    )
+                    report_summary += f"\nLatest: {critical} critical, {warnings} warnings"
                 except Exception:
                     pass
 
@@ -276,9 +261,7 @@ class TelegramChannel(BaseChannel):
             return f"⚠️ *{name}*: concerns only available for local machines"
 
         repo = machine["repo_path"]
-        problems_files = sorted(
-            glob.glob(str(repo / ".sisyphus/notepads/stargazer-*/problems.md"))
-        )
+        problems_files = sorted(glob.glob(str(repo / ".sisyphus/notepads/stargazer-*/problems.md")))
 
         if not problems_files:
             return f"✅ *{name}*: No Stargazer concerns on file."
@@ -293,16 +276,12 @@ class TelegramChannel(BaseChannel):
 
     # --- ORDER HELPERS ---
 
-    def create_order(
-        self, machine_name: str, machine_config: Dict, order_text: str, chat_id: int
-    ) -> Optional[str]:
+    def create_order(self, machine_name: str, machine_config: Dict, order_text: str, chat_id: int) -> Optional[str]:
         """Write an order JSON file. Returns the order file path or None."""
         if not self.is_local(machine_config):
             return None
 
-        orders_dir = (
-            machine_config["repo_path"] / ".sisyphus" / "notepads" / "galaxy-orders"
-        )
+        orders_dir = machine_config["repo_path"] / ".sisyphus" / "notepads" / "galaxy-orders"
         orders_dir.mkdir(parents=True, exist_ok=True)
 
         ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
@@ -343,9 +322,7 @@ class TelegramChannel(BaseChannel):
 
         name = self.default_machine
         machine = self.machines[name]
-        order_file = self.create_order(
-            name, machine, order_text, update.effective_chat.id
-        )
+        order_file = self.create_order(name, machine, order_text, update.effective_chat.id)
 
         if order_file:
             self.pending_orders[order_file] = {
@@ -353,9 +330,7 @@ class TelegramChannel(BaseChannel):
                 "chat_id": update.effective_chat.id,
                 "order_text": order_text,
             }
-            await update.message.reply_text(
-                f"\U0001f4e1 \u2192 *{name}*", parse_mode="Markdown"
-            )
+            await update.message.reply_text(f"\U0001f4e1 \u2192 *{name}*", parse_mode="Markdown")
 
         # Note: MessageBus publishing disabled - using filesystem bridge (Hermes)
         # Avoids duplicate orders when both filesystem and MessageBus are active
@@ -443,17 +418,14 @@ class TelegramChannel(BaseChannel):
 
         if not ctx.args:
             await update.message.reply_text(
-                "Usage: `/feed <url> [note]`\n"
-                "Example: `/feed https://github.com/adbar/trafilatura great tool`",
+                "Usage: `/feed <url> [note]`\nExample: `/feed https://github.com/adbar/trafilatura great tool`",
                 parse_mode="Markdown",
             )
             return
 
         url = ctx.args[0]
         if not re.match(r"^https?://", url):
-            await update.message.reply_text(
-                "❌ URL must start with http:// or https://"
-            )
+            await update.message.reply_text("❌ URL must start with http:// or https://")
             return
 
         note = " ".join(ctx.args[1:]).strip() if len(ctx.args) > 1 else None
@@ -486,7 +458,6 @@ class TelegramChannel(BaseChannel):
             chat_id,
             f"✅ {title}\n🏷️ {tags}\n📁 references/{slug}.md",
         )
-
 
     async def cmd_paper(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Add academic paper to Zotero. Usage: /paper <doi|url> [note]"""
@@ -552,9 +523,7 @@ class TelegramChannel(BaseChannel):
         delivered = []
         for name, machine in targets:
             if self.is_local(machine):
-                orders_dir = (
-                    machine["repo_path"] / ".sisyphus" / "notepads" / "galaxy-orders"
-                )
+                orders_dir = machine["repo_path"] / ".sisyphus" / "notepads" / "galaxy-orders"
                 orders_dir.mkdir(parents=True, exist_ok=True)
 
                 order = {
@@ -626,9 +595,7 @@ class TelegramChannel(BaseChannel):
         machine = self.machines[machine_name]
 
         order_text = f"/stars {action}"
-        order_file = self.create_order(
-            machine_name, machine, order_text, update.effective_chat.id
-        )
+        order_file = self.create_order(machine_name, machine, order_text, update.effective_chat.id)
 
         if order_file:
             self.pending_orders[order_file] = {
@@ -714,10 +681,7 @@ class TelegramChannel(BaseChannel):
 
                         order_payload = msg_data.get("order_payload", "")
                         if order_payload:
-                            header = (
-                                f"{emoji} *{from_agent}*\n"
-                                f"\U0001f4e8 _{order_payload[:100]}_\n\n"
-                            )
+                            header = f"{emoji} *{from_agent}*\n\U0001f4e8 _{order_payload[:100]}_\n\n"
                         else:
                             header = f"{emoji} *{from_agent}*\n\n"
 
@@ -747,22 +711,16 @@ class TelegramChannel(BaseChannel):
                                     )
                                 except Exception:
                                     try:
-                                        await self.app.bot.send_message(
-                                            chat_id=user_id, text=chunk
-                                        )
+                                        await self.app.bot.send_message(chat_id=user_id, text=chunk)
                                     except Exception as e:
-                                        logger.error(
-                                            f"[outbox] Failed to send to {user_id}: {e}"
-                                        )
+                                        logger.error(f"[outbox] Failed to send to {user_id}: {e}")
 
                         msg_data["sent"] = True
                         msg_data["sent_at"] = datetime.now(timezone.utc).isoformat()
                         with open(outbox_file, "w") as f:
                             json.dump(msg_data, f, indent=2)
 
-                        logger.info(
-                            f"[outbox] Sent message from {machine_name}/{from_agent}"
-                        )
+                        logger.info(f"[outbox] Sent message from {machine_name}/{from_agent}")
 
                     except Exception as e:
                         logger.error(f"[outbox] Error processing {outbox_file}: {e}")
@@ -798,28 +756,19 @@ class TelegramChannel(BaseChannel):
                             order_id = order_data.get("order_id", order_ts)
 
                             # Skip if outbox file exists (outbox has better routing with chat_id)
-                            outbox_file = (
-                                repo
-                                / f".sisyphus/notepads/galaxy-outbox/hermes-{order_id}.json"
-                            )
+                            outbox_file = repo / f".sisyphus/notepads/galaxy-outbox/hermes-{order_id}.json"
                             if outbox_file.exists():
                                 completed.append(order_file)
                                 continue
 
                             # Only check response files if no outbox exists
-                            matching_response = (
-                                repo
-                                / f".sisyphus/notepads/galaxy-order-response-{order_ts}.md"
-                            )
+                            matching_response = repo / f".sisyphus/notepads/galaxy-order-response-{order_ts}.md"
 
                             response_file = None
                             if matching_response.exists():
                                 response_file = str(matching_response)
                             else:
-                                response_pattern = str(
-                                    repo
-                                    / ".sisyphus/notepads/galaxy-order-response-*.md"
-                                )
+                                response_pattern = str(repo / ".sisyphus/notepads/galaxy-order-response-*.md")
                                 responses = sorted(glob.glob(response_pattern))
                                 if responses:
                                     response_file = responses[-1]
@@ -846,9 +795,7 @@ class TelegramChannel(BaseChannel):
                                         f"📍 <code>{machine}</code>\n"
                                         f"📨 <i>{order_text}</i>"
                                     )
-                                    compact_response = self.format_response_compact(
-                                        response_text
-                                    )
+                                    compact_response = self.format_response_compact(response_text)
 
                                     await self.app.bot.send_message(
                                         chat_id=chat_id,
@@ -861,9 +808,7 @@ class TelegramChannel(BaseChannel):
                                         parse_mode="HTML",
                                     )
                                 else:
-                                    compact_summary = self.format_response_compact(
-                                        response_text
-                                    )[:400]
+                                    compact_summary = self.format_response_compact(response_text)[:400]
                                     msg = (
                                         f"✅ <b>Order Acknowledged</b>\n\n"
                                         f"📍 <code>{machine}</code>\n"
@@ -904,6 +849,29 @@ class TelegramChannel(BaseChannel):
             for order_file in completed:
                 self.pending_orders.pop(order_file, None)
 
+    # --- DIGEST ---
+
+    def _load_latest_digest(self) -> dict:
+        """Load the latest digest from index for Telegram push."""
+        import json as _json
+
+        index_path = Path(".sisyphus/digests/index.json")
+        if not index_path.exists():
+            return {"patterns": [], "references": [], "actions": []}
+        try:
+            index = _json.loads(index_path.read_text(encoding="utf-8"))
+        except (_json.JSONDecodeError, OSError):
+            return {"patterns": [], "references": [], "actions": []}
+        digests = index.get("digests", [])
+        if not digests:
+            return {"patterns": [], "references": [], "actions": []}
+        latest = sorted(digests, key=lambda d: d.get("date", ""), reverse=True)[0]
+        patterns = [{"name": t} for t in latest.get("themes", [])[:5]]
+        refs_slugs = latest.get("refs_slugs", [])
+        refs_processed = latest.get("refs_processed", len(refs_slugs))
+        references = [{"title": f"{refs_processed} references processed ({latest.get('date', '?')})"}]
+        return {"patterns": patterns, "references": references, "actions": []}
+
     # --- BASECHANNEL INTERFACE ---
 
     async def _post_init(self, app):
@@ -919,9 +887,7 @@ class TelegramChannel(BaseChannel):
         if "CHANGE-ME" in self.token:
             raise ValueError("Update telegram_token in config. See config.json.example")
 
-        self.app = (
-            ApplicationBuilder().token(self.token).post_init(self._post_init).build()
-        )
+        self.app = ApplicationBuilder().token(self.token).post_init(self._post_init).build()
 
         self.app.add_handler(CommandHandler("start", self.cmd_help))
         self.app.add_handler(CommandHandler("help", self.cmd_help))
@@ -932,9 +898,7 @@ class TelegramChannel(BaseChannel):
         self.app.add_handler(CommandHandler("stars", self.cmd_stars))
         self.app.add_handler(CommandHandler("order", self.cmd_order))
         self.app.add_handler(CommandHandler("machines", self.cmd_machines))
-        self.app.add_handler(
-            MessageHandler(filters.TEXT & ~filters.COMMAND, self._on_text)
-        )
+        self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._on_text))
 
         machine_list = ", ".join(self.machines.keys())
         logger.info(f"🌌 TelegramChannel online — default: {self.default_machine}")
@@ -951,6 +915,12 @@ class TelegramChannel(BaseChannel):
         logger.info("[background] poll_order_acknowledgments task created")
         asyncio.create_task(self.poll_outbox_messages())
         logger.info("[background] poll_outbox_messages task created")
+
+        from handlers.digest_push import setup_digest_scheduler
+
+        self.digest_scheduler = setup_digest_scheduler(self.config, self.app.bot, self._load_latest_digest)
+        if self.digest_scheduler:
+            logger.info("[digest] Daily digest scheduler started (9 AM KST)")
 
     async def stop(self) -> None:
         """Stop Telegram bot gracefully."""
