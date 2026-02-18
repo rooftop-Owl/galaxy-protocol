@@ -96,9 +96,7 @@ def load_machines(config):
     return {
         name: {
             "host": "localhost",
-            "repo_path": Path(
-                config.get("repo_path", str(Path(__file__).parent.parent.parent))
-            ),
+            "repo_path": Path(config.get("repo_path", str(Path(__file__).parent.parent.parent))),
             "machine_name": name,
         }
     }
@@ -182,9 +180,7 @@ def run_on_machine(machine, cmd):
     repo = str(machine["repo_path"])
 
     if is_local(machine):
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, cwd=repo, timeout=30
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=repo, timeout=30)
         return result.stdout.strip(), result.stderr.strip(), result.returncode
 
     # Remote: SSH
@@ -220,9 +216,7 @@ def get_status_text(name, machine):
         git_status = "(unknown)"
 
     try:
-        stdout, _, _ = run_on_machine(
-            machine, ["python3", "-m", "pytest", "tests/", "-q", "--tb=no"]
-        )
+        stdout, _, _ = run_on_machine(machine, ["python3", "-m", "pytest", "tests/", "-q", "--tb=no"])
         test_line = stdout.split("\n")[-1] if stdout else "unknown"
     except Exception:
         test_line = "(pytest unavailable)"
@@ -231,9 +225,7 @@ def get_status_text(name, machine):
     report_summary = "No reports"
     if is_local(machine):
         repo = machine["repo_path"]
-        reports = sorted(
-            glob.glob(str(repo / ".sisyphus/notepads/stargazer-*/meta.json"))
-        )
+        reports = sorted(glob.glob(str(repo / ".sisyphus/notepads/stargazer-*/meta.json")))
         if reports:
             report_summary = f"{len(reports)} report(s)"
             try:
@@ -261,9 +253,7 @@ def get_concerns_text(name, machine):
         return f"⚠️ *{name}*: concerns only available for local machines"
 
     repo = machine["repo_path"]
-    problems_files = sorted(
-        glob.glob(str(repo / ".sisyphus/notepads/stargazer-*/problems.md"))
-    )
+    problems_files = sorted(glob.glob(str(repo / ".sisyphus/notepads/stargazer-*/problems.md")))
 
     if not problems_files:
         return f"✅ *{name}*: No Stargazer concerns on file."
@@ -285,9 +275,7 @@ def create_order(machine_name, machine_config, order_text, chat_id):
     if not is_local(machine_config):
         return None
 
-    orders_dir = (
-        machine_config["repo_path"] / ".sisyphus" / "notepads" / "galaxy-orders"
-    )
+    orders_dir = machine_config["repo_path"] / ".sisyphus" / "notepads" / "galaxy-orders"
     orders_dir.mkdir(parents=True, exist_ok=True)
 
     order = {
@@ -308,32 +296,22 @@ def create_order(machine_name, machine_config, order_text, chat_id):
     return str(order_file)
 
 
-def create_enhanced_order(
-    machine_name, machine_config, order_text, chat_id, metadata=None
-):
+def create_enhanced_order(machine_name, machine_config, order_text, chat_id, metadata=None):
     if not is_local(machine_config):
         return None
-    orders_dir = (
-        machine_config["repo_path"] / ".sisyphus" / "notepads" / "galaxy-orders"
-    )
+    orders_dir = machine_config["repo_path"] / ".sisyphus" / "notepads" / "galaxy-orders"
     order = common.build_order(machine_name, order_text, metadata=metadata)
     order_file = common.write_order(orders_dir, order, message_id=chat_id)
     return str(order_file)
 
 
 def _build_order_metadata(order_text, project_name):
-    temp_order = common.build_order(
-        DEFAULT_MACHINE, order_text, {"project": project_name}
-    )
-    clean_text, temp_order = priority_handler.apply_priority_and_schedule(
-        order_text, temp_order
-    )
+    temp_order = common.build_order(DEFAULT_MACHINE, order_text, {"project": project_name})
+    clean_text, temp_order = priority_handler.apply_priority_and_schedule(order_text, temp_order)
     try:
         priority_handler.validate_order(temp_order)
     except Exception:
-        temp_order = common.build_order(
-            DEFAULT_MACHINE, clean_text, {"project": project_name}
-        )
+        temp_order = common.build_order(DEFAULT_MACHINE, clean_text, {"project": project_name})
     return clean_text, {
         "priority": temp_order.get("priority", "normal"),
         "project": temp_order.get("project", project_name),
@@ -362,18 +340,12 @@ async def _submit_text_order_from_media(update: Update, order_text: str):
             "chat_id": update.effective_chat.id,
             "order_text": clean_text,
         }
-        await update.message.reply_text(
-            f"\U0001f4e1 \u2192 *{name}*", parse_mode="Markdown"
-        )
+        await update.message.reply_text(f"\U0001f4e1 \u2192 *{name}*", parse_mode="Markdown")
 
 
 async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Any plain text message = order for default machine."""
-    if (
-        update.effective_user is None
-        or update.message is None
-        or update.effective_chat is None
-    ):
+    if update.effective_user is None or update.message is None or update.effective_chat is None:
         return
     if not is_authorized(update.effective_user.id):
         return
@@ -385,9 +357,7 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     name = DEFAULT_MACHINE
     machine = MACHINES[name]
 
-    handled = await feed_handler.maybe_handle_github_reference(
-        update, ctx, CONFIG, machine
-    )
+    handled = await feed_handler.maybe_handle_github_reference(update, ctx, CONFIG, machine)
     if handled:
         return
 
@@ -407,9 +377,7 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             "chat_id": update.effective_chat.id,
             "order_text": clean_text,
         }
-        await update.message.reply_text(
-            f"\U0001f4e1 \u2192 *{name}*", parse_mode="Markdown"
-        )
+        await update.message.reply_text(f"\U0001f4e1 \u2192 *{name}*", parse_mode="Markdown")
 
 
 async def handle_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -531,11 +499,7 @@ async def cmd_concerns(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_order(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Send order. Usage: /order [machine] <message> or /order all <message>"""
-    if (
-        update.effective_user is None
-        or update.message is None
-        or update.effective_chat is None
-    ):
+    if update.effective_user is None or update.message is None or update.effective_chat is None:
         return
     if not is_authorized(update.effective_user.id):
         return
@@ -594,9 +558,7 @@ async def cmd_order(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             delivered.append(f"{name} (remote — pending SSH)")
 
     targets_str = ", ".join(delivered)
-    await update.message.reply_text(
-        f"📡 Order delivered to *{targets_str}*:\n> {order_text}", parse_mode="Markdown"
-    )
+    await update.message.reply_text(f"📡 Order delivered to *{targets_str}*:\n> {order_text}", parse_mode="Markdown")
 
 
 async def cmd_machines(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -708,10 +670,7 @@ async def poll_outbox_messages(app):
                     # Build message with order context
                     order_payload = msg_data.get("order_payload", "")
                     if order_payload:
-                        header = (
-                            f"{emoji} <b>{from_agent}</b>\n"
-                            f"\U0001f4e8 <i>{order_payload[:100]}</i>\n\n"
-                        )
+                        header = f"{emoji} <b>{from_agent}</b>\n\U0001f4e8 <i>{order_payload[:100]}</i>\n\n"
                     else:
                         header = f"{emoji} <b>{from_agent}</b>\n\n"
 
@@ -731,14 +690,10 @@ async def poll_outbox_messages(app):
                     for user_id in AUTHORIZED:
                         for chunk in chunks:
                             try:
-                                await app.bot.send_message(
-                                    chat_id=user_id, text=chunk, parse_mode="HTML"
-                                )
+                                await app.bot.send_message(chat_id=user_id, text=chunk, parse_mode="HTML")
                             except Exception:
                                 try:
-                                    await app.bot.send_message(
-                                        chat_id=user_id, text=chunk
-                                    )
+                                    await app.bot.send_message(chat_id=user_id, text=chunk)
                                 except Exception as e:
                                     print(f"[outbox] Failed to send to {user_id}: {e}")
 
@@ -783,19 +738,14 @@ async def poll_order_acknowledgments(app):
                     if machine_config and is_local(machine_config):
                         repo = Path(machine_config["repo_path"])
                         order_ts = Path(order_file).stem
-                        matching_response = (
-                            repo
-                            / f".sisyphus/notepads/galaxy-order-response-{order_ts}.md"
-                        )
+                        matching_response = repo / f".sisyphus/notepads/galaxy-order-response-{order_ts}.md"
 
                         # Fall back to latest response if exact match not found
                         response_file = None
                         if matching_response.exists():
                             response_file = str(matching_response)
                         else:
-                            response_pattern = str(
-                                repo / ".sisyphus/notepads/galaxy-order-response-*.md"
-                            )
+                            response_pattern = str(repo / ".sisyphus/notepads/galaxy-order-response-*.md")
                             responses = sorted(glob.glob(response_pattern))
                             if responses:
                                 response_file = responses[-1]
@@ -825,17 +775,11 @@ async def poll_order_acknowledgments(app):
                             if len(response_text) <= 1000:
                                 # Short response: compact emoji format
                                 header_msg = (
-                                    f"✅ <b>Order Acknowledged</b>\n\n"
-                                    f"📍 <code>{machine}</code>\n"
-                                    f"📨 <i>{order_text}</i>"
+                                    f"✅ <b>Order Acknowledged</b>\n\n📍 <code>{machine}</code>\n📨 <i>{order_text}</i>"
                                 )
-                                compact_response = format_response_compact(
-                                    response_text
-                                )
+                                compact_response = format_response_compact(response_text)
 
-                                await app.bot.send_message(
-                                    chat_id=chat_id, text=header_msg, parse_mode="HTML"
-                                )
+                                await app.bot.send_message(chat_id=chat_id, text=header_msg, parse_mode="HTML")
                                 await app.bot.send_message(
                                     chat_id=chat_id,
                                     text=compact_response,
@@ -843,9 +787,7 @@ async def poll_order_acknowledgments(app):
                                 )
                             else:
                                 # Long response: compact summary + file attachment
-                                compact_summary = format_response_compact(
-                                    response_text
-                                )[:400]
+                                compact_summary = format_response_compact(response_text)[:400]
                                 msg = (
                                     f"✅ <b>Order Acknowledged</b>\n\n"
                                     f"📍 <code>{machine}</code>\n"
@@ -853,9 +795,7 @@ async def poll_order_acknowledgments(app):
                                     f"<b>Summary:</b>\n{compact_summary}...\n\n"
                                     f"📎 Full response attached"
                                 )
-                                await app.bot.send_message(
-                                    chat_id=chat_id, text=msg, parse_mode="HTML"
-                                )
+                                await app.bot.send_message(chat_id=chat_id, text=msg, parse_mode="HTML")
                                 # Send file attachment
                                 with open(response_file, "rb") as f:
                                     await app.bot.send_document(
@@ -872,9 +812,7 @@ async def poll_order_acknowledgments(app):
                                 f"📨 <i>{order_text}</i>\n\n"
                                 f"⏳ <i>No response notepad yet</i>"
                             )
-                            await app.bot.send_message(
-                                chat_id=chat_id, text=no_response_msg, parse_mode="HTML"
-                            )
+                            await app.bot.send_message(chat_id=chat_id, text=no_response_msg, parse_mode="HTML")
 
                     completed.append(order_file)
 
@@ -894,13 +832,34 @@ async def post_init(app):
     asyncio.create_task(poll_order_acknowledgments(app))
     asyncio.create_task(poll_outbox_messages(app))
     global digest_scheduler
-    digest_scheduler = digest_push.setup_digest_scheduler(
-        CONFIG, app.bot, _load_latest_digest
-    )
+    digest_scheduler = digest_push.setup_digest_scheduler(CONFIG, app.bot, _load_latest_digest)
 
 
 def _load_latest_digest():
-    return {"patterns": [], "references": [], "actions": []}
+    import json as _json
+    from pathlib import Path as _Path
+
+    index_path = _Path(".sisyphus/digests/index.json")
+    if not index_path.exists():
+        return {"patterns": [], "references": [], "actions": []}
+
+    try:
+        index = _json.loads(index_path.read_text(encoding="utf-8"))
+    except (_json.JSONDecodeError, OSError):
+        return {"patterns": [], "references": [], "actions": []}
+
+    digests = index.get("digests", [])
+    if not digests:
+        return {"patterns": [], "references": [], "actions": []}
+
+    latest = sorted(digests, key=lambda d: d.get("date", ""), reverse=True)[0]
+
+    patterns = [{"name": t} for t in latest.get("themes", [])[:5]]
+    refs_slugs = latest.get("refs_slugs", [])
+    refs_processed = latest.get("refs_processed", len(refs_slugs))
+    references = [{"title": f"{refs_processed} references processed ({latest.get('date', '?')})"}]
+
+    return {"patterns": patterns, "references": references, "actions": []}
 
 
 def main():
