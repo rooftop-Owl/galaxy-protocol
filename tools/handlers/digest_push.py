@@ -13,12 +13,9 @@ def setup_digest_scheduler(config, bot, digest_loader):
     if not config.get("features", {}).get("GALAXY_DIGEST_PUSH_ENABLED", False):
         return None
 
-    sqlalchemy_jobstore = importlib.import_module("apscheduler.jobstores.sqlalchemy")
     asyncio_scheduler = importlib.import_module("apscheduler.schedulers.asyncio")
 
-    db_path = config.get("digest_push", {}).get("persistence_db", ".galaxy/jobs.sqlite")
-    jobstores = {"default": sqlalchemy_jobstore.SQLAlchemyJobStore(url=f"sqlite:///{db_path}")}
-    scheduler = asyncio_scheduler.AsyncIOScheduler(jobstores=jobstores)
+    scheduler = asyncio_scheduler.AsyncIOScheduler()
     scheduler.add_job(
         send_daily_digest,
         "cron",
