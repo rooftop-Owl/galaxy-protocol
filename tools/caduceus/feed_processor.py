@@ -665,7 +665,16 @@ def _ensure_index(index_path: Path) -> dict[str, Any]:
         data = {"version": "1.0", "references": []}
         index_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
         return data
-    return json.loads(index_path.read_text(encoding="utf-8"))
+    data = json.loads(index_path.read_text(encoding="utf-8"))
+    # Repair legacy entries missing required fields (backward compat)
+    repaired = False
+    for ref in data.get("references", []):
+        if "shared_via" not in ref:
+            ref["shared_via"] = "tui"
+            repaired = True
+    if repaired:
+        index_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    return data
 
 
 def _load_runtime_config(references_dir: Path) -> dict[str, Any] | None:
