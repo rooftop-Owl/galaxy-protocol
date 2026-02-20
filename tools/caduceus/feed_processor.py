@@ -180,6 +180,107 @@ def _rewrite_twitter_url(url: str) -> str:
     return url
 
 
+def _is_twitter_url(url: str) -> bool:
+    netloc = urlparse(url).netloc.lower()
+    return netloc in {"x.com", "twitter.com", "www.x.com", "www.twitter.com"}
+
+
+def _extract_tweet_id(url: str) -> str | None:
+    m = re.search(r"/status/(\d+)", url)
+    return m.group(1) if m else None
+
+
+def _resolve_tweet_username(tweet_id: str) -> str | None:
+    """Use Twitter oEmbed to resolve @username when URL is /i/status/<id>."""
+    import urllib.request as _req
+
+    oembed = f"https://publish.twitter.com/oembed?url=https://twitter.com/i/status/{tweet_id}&omit_script=true"
+    try:
+        r = _req.urlopen(_req.Request(oembed, headers={"User-Agent": "Mozilla/5.0"}), timeout=8)
+        html = json.loads(r.read()).get("html", "")
+        m = re.search(r"twitter\.com/(\w+)/status/", html)
+        return m.group(1) if m else None
+    except Exception:
+        return None
+
+
+def _fxtwitter_api(username: str, tweet_id: str) -> dict[str, Any] | None:
+    """Fetch tweet data from api.fxtwitter.com JSON API. Returns tweet dict or None."""
+    import urllib.request as _req
+
+    api_url = f"https://api.fxtwitter.com/{username}/status/{tweet_id}"
+    try:
+        r = _req.urlopen(_req.Request(api_url, headers={"User-Agent": "Mozilla/5.0"}), timeout=10)
+        return json.loads(r.read()).get("tweet")
+    except Exception:
+        return None
+
+
+def _parse_fxtwitter_tweet(
+    tweet: dict[str, Any],
+) -> tuple[str, str, list[str], list[str]]:
+    article = tweet.get("article") or {}
+    author = tweet.get("author", {})
+
+    title = (
+        article.get("title")
+        or tweet.get("raw_text", {}).get("text", "").strip()
+        or f"@{author.get('screen_name', 'unknown')} on X"
+    )
+
+    preview = (article.get("preview_text") or "").strip()
+
+    lines: list[str] = []
+    for b in article.get("content", {}).get("blocks", []):
+        text = b.get("text", "").strip()
+        if not text:
+            continue
+        if b.get("type") == "blockquote":
+            lines.append(f"> {text}")
+        elif b.get("type") != "atomic":  # skip image/embed placeholders
+            lines.append(text)
+    body = "\n\n".join(lines)
+
+    summary = preview or body[:500] or title
+    key_insights = [s for s in body.split("\n\n")[:3] if s.strip()] if body else [summary]
+    keywords = [author["screen_name"]] if author.get("screen_name") else []
+
+    return title, summary, key_insights, keywords
+
+
+def _fetch_twitter_content(
+    url: str,
+) -> tuple[str, str, list[str], list[str]] | None:
+    """Fetch Twitter/X post content via fxtwitter JSON API.
+
+    Handles both /username/status/ID and /i/status/ID URL formats.
+    For /i/status/ links (no username in path), resolves the username via
+    Twitter oEmbed before calling the API.
+
+    Returns (title, summary, key_insights, keywords) or None on failure.
+    """
+    tweet_id = _extract_tweet_id(url)
+    if not tweet_id:
+        return None
+
+    # Resolve username — present in normal URLs, absent in /i/status/ links
+    path_parts = urlparse(url).path.strip("/").split("/")
+    if len(path_parts) >= 3 and path_parts[1] == "status" and path_parts[0] not in ("i", ""):
+        username = path_parts[0]
+    else:
+        username = _resolve_tweet_username(tweet_id)
+        if not username:
+            logger.warning(f"[feed] Could not resolve username for Twitter URL: {url}")
+            return None
+
+    tweet = _fxtwitter_api(username, tweet_id)
+    if not tweet:
+        logger.warning(f"[feed] fxtwitter API returned no data for @{username}/{tweet_id}")
+        return None
+
+    return _parse_fxtwitter_tweet(tweet)
+
+
 def _detect_type(url: str) -> str:
     lower_url = url.lower()
     if "github.com" in lower_url:
@@ -603,42 +704,83 @@ async def process_feed(
         index_path = references_dir / "index.json"
         runtime_config = config or _load_runtime_config(references_dir)
 
-        fetch_url = _rewrite_twitter_url(url)
-        downloaded = trafilatura.fetch_url(fetch_url)
-        if not downloaded:
-            return {"error": "Failed to fetch URL"}
-
-        metadata = trafilatura.extract_metadata(downloaded)
-        extracted_text = (
-            trafilatura.extract(
-                downloaded,
-                include_comments=False,
-                include_tables=False,
-                include_links=False,
-            )
-            or ""
-        )
-
-        title = metadata.title if metadata and metadata.title else url
-
-        article_summary: str | None = None
+        title: str
+        summary: str
+        key_insights: list[str]
         keywords: list[str] = []
-        try:
-            article = Article(url)
-            article.download()
-            article.parse()
+
+        if _is_twitter_url(url):
+            twitter_content = _fetch_twitter_content(url)
+            if twitter_content:
+                title, summary, key_insights, keywords = twitter_content
+                logger.info(f"[feed] fxtwitter API: {url!r} → {title!r}")
+            else:
+                fetch_url = _rewrite_twitter_url(url)
+                downloaded = trafilatura.fetch_url(fetch_url)
+                if not downloaded:
+                    return {"error": "Failed to fetch Twitter URL (API and scraping both failed)"}
+                metadata = trafilatura.extract_metadata(downloaded)
+                extracted_text = (
+                    trafilatura.extract(
+                        downloaded,
+                        include_comments=False,
+                        include_tables=False,
+                        include_links=False,
+                    )
+                    or ""
+                )
+                title = metadata.title if metadata and metadata.title else url
+                if "JavaScript is not available" in title:
+                    return {
+                        "error": "Twitter content is JS-gated; fxtwitter API also failed. Post may be deleted or private."
+                    }
+                article_summary: str | None = None
+                try:
+                    np_article = Article(url)
+                    np_article.download()
+                    np_article.parse()
+                    try:
+                        np_article.nlp()
+                    except Exception:
+                        pass
+                    article_summary = np_article.summary if np_article.summary else None
+                    if isinstance(np_article.keywords, list):
+                        keywords = [kw for kw in np_article.keywords if kw]
+                except Exception:
+                    pass
+                summary = _select_summary(extracted_text, article_summary)
+                key_insights = _select_key_insights(extracted_text, summary)
+        else:
+            downloaded = trafilatura.fetch_url(url)
+            if not downloaded:
+                return {"error": "Failed to fetch URL"}
+            metadata = trafilatura.extract_metadata(downloaded)
+            extracted_text = (
+                trafilatura.extract(
+                    downloaded,
+                    include_comments=False,
+                    include_tables=False,
+                    include_links=False,
+                )
+                or ""
+            )
+            title = metadata.title if metadata and metadata.title else url
+            article_summary = None
             try:
-                article.nlp()
+                np_article = Article(url)
+                np_article.download()
+                np_article.parse()
+                try:
+                    np_article.nlp()
+                except Exception:
+                    pass
+                article_summary = np_article.summary if np_article.summary else None
+                if isinstance(np_article.keywords, list):
+                    keywords = [kw for kw in np_article.keywords if kw]
             except Exception:
                 pass
-            article_summary = article.summary if article.summary else None
-            if isinstance(article.keywords, list):
-                keywords = [keyword for keyword in article.keywords if keyword]
-        except Exception:
-            pass
-
-        summary = _select_summary(extracted_text, article_summary)
-        key_insights = _select_key_insights(extracted_text, summary)
+            summary = _select_summary(extracted_text, article_summary)
+            key_insights = _select_key_insights(extracted_text, summary)
 
         ref_type = _detect_type(url)
         tags: set[str] = set()
