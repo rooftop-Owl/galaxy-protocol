@@ -1,12 +1,79 @@
+import asyncio
+import json
+import logging
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 import importlib
 import sys
-from pathlib import Path
 
-# Add parent directory to path for utils import
 sys.path.insert(0, str(Path(__file__).parent.parent))
 split_message = importlib.import_module("utils.telegram_utils").split_message
+
+logger = logging.getLogger(__name__)
+
+MIN_REFS_FOR_AUTO_DIGEST = 3
+
+
+def _get_last_digest_date() -> str | None:
+    index_path = Path(".sisyphus/digests/index.json")
+    if not index_path.exists():
+        return None
+    try:
+        data = json.loads(index_path.read_text(encoding="utf-8"))
+        digests = sorted(data.get("digests", []), key=lambda d: d.get("date", ""), reverse=True)
+        return digests[0]["date"] if digests else None
+    except Exception:
+        return None
+
+
+def _count_new_refs(since_date: str | None) -> int:
+    index_path = Path(".sisyphus/references/index.json")
+    if not index_path.exists():
+        return 0
+    try:
+        data = json.loads(index_path.read_text(encoding="utf-8"))
+        if since_date is None:
+            return len(data.get("references", []))
+        cutoff = since_date + "T23:59:59Z"
+        return sum(1 for ref in data.get("references", []) if ref.get("shared_at", "") > cutoff)
+    except Exception:
+        return 0
+
+
+async def _spawn_digest_creation() -> bool:
+    opencode_runtime = importlib.import_module("opencode_runtime")
+    opencode_binary, error = opencode_runtime.resolve_opencode_binary()
+    if not opencode_binary:
+        logger.warning(f"[digest] Auto-create skipped: opencode not found: {error}")
+        return False
+    try:
+        process = await asyncio.create_subprocess_exec(
+            opencode_binary,
+            "run",
+            "--format",
+            "json",
+            "/digest",
+            cwd=str(Path.cwd()),
+            env=opencode_runtime.sanitize_opencode_env(),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            await asyncio.wait_for(process.communicate(), timeout=300)
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+            logger.warning("[digest] Auto-create timed out after 5 minutes")
+            return False
+        if process.returncode != 0:
+            logger.warning(f"[digest] Auto-create exited with code {process.returncode}")
+            return False
+        logger.info("[digest] Auto-create completed successfully")
+        return True
+    except Exception as exc:
+        logger.warning(f"[digest] Auto-create failed: {exc}")
+        return False
 
 
 def setup_digest_scheduler(config, bot, digest_loader):
@@ -31,6 +98,15 @@ def setup_digest_scheduler(config, bot, digest_loader):
 
 
 async def send_daily_digest(bot, config, digest_loader):
+    min_refs = config.get("digest_push", {}).get("min_refs_for_auto_digest", MIN_REFS_FOR_AUTO_DIGEST)
+    last_date = _get_last_digest_date()
+    new_count = _count_new_refs(last_date)
+    if new_count >= min_refs:
+        logger.info(f"[digest] {new_count} new refs since {last_date} — auto-creating digest")
+        await _spawn_digest_creation()
+    else:
+        logger.info(f"[digest] {new_count} new refs (threshold {min_refs}) — skipping auto-create")
+
     digest_data = digest_loader()
     message = format_digest_message(digest_data)
     subscribers = config.get("digest_push", {}).get("digest_subscribers", [])

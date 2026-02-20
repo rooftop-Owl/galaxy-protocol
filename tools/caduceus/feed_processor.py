@@ -104,6 +104,7 @@ def _save_enrichment_session_id(repo_root: Path, session_id: str) -> None:
     except OSError:
         pass
 
+
 # Known DeepWiki error patterns that indicate a failed analysis baked into content.
 # When these appear in "Relevance" or "Patterns" sections, the enrichment produced
 # garbage — replace with clean markers instead of keeping error text.
@@ -132,7 +133,7 @@ def _split_sentences(text: str) -> list[str]:
 
 def _slugify(value: str, max_length: int = 200) -> str:
     """Convert value to URL-safe slug, truncated to max_length.
-    
+
     Args:
         value: String to slugify
         max_length: Maximum slug length (default 200 to stay under 255-byte filename limit
@@ -141,11 +142,11 @@ def _slugify(value: str, max_length: int = 200) -> str:
     ascii_value = _to_ascii(value).lower()
     ascii_value = re.sub(r"[^a-z0-9]+", "-", ascii_value)
     ascii_value = re.sub(r"-+", "-", ascii_value).strip("-")
-    
+
     # Truncate to max_length, avoiding mid-word cuts
     if len(ascii_value) > max_length:
         ascii_value = ascii_value[:max_length].rsplit("-", 1)[0]
-    
+
     return ascii_value or "reference"
 
 
@@ -163,6 +164,22 @@ def _extract_owner_repo(url: str) -> tuple[str, str]:
     return owner, repo
 
 
+def _rewrite_twitter_url(url: str) -> str:
+    """Rewrite x.com/twitter.com URLs to fxtwitter.com for content extraction.
+
+    Twitter/X gates content behind JS. fxtwitter.com provides a static
+    mirror that trafilatura can fetch successfully.
+    """
+    parsed = urlparse(url)
+    netloc = parsed.netloc.lower()
+    twitter_hosts = {"x.com", "twitter.com", "www.x.com", "www.twitter.com"}
+    if netloc in twitter_hosts:
+        rewritten = url.replace(parsed.netloc, "fxtwitter.com", 1)
+        logger.debug(f"[feed] Rewrote Twitter URL: {url} → {rewritten}")
+        return rewritten
+    return url
+
+
 def _detect_type(url: str) -> str:
     lower_url = url.lower()
     if "github.com" in lower_url:
@@ -172,6 +189,8 @@ def _detect_type(url: str) -> str:
     if any(token in lower_url for token in ["docs.", "/docs", "documentation", "readthedocs"]):
         return "docs"
     if any(token in lower_url for token in ["news.ycombinator.com", "reddit.com"]):
+        return "post"
+    if any(token in lower_url for token in ["x.com", "twitter.com"]):
         return "post"
     return "article"
 
@@ -468,14 +487,14 @@ async def _spawn_deepwiki_enrichment(
 
     try:
         clean_env = sanitize_opencode_env()
-        
+
         # Build command with session reuse
         cmd = [opencode_binary, "run", "--format", "json"]
         session_id = _load_enrichment_session_id(repo_root)
         if session_id:
             cmd.extend(["--session", session_id])
         cmd.append(prompt)
-        
+
         process = await asyncio.create_subprocess_exec(
             *cmd,
             cwd=str(repo_root),
@@ -584,7 +603,8 @@ async def process_feed(
         index_path = references_dir / "index.json"
         runtime_config = config or _load_runtime_config(references_dir)
 
-        downloaded = trafilatura.fetch_url(url)
+        fetch_url = _rewrite_twitter_url(url)
+        downloaded = trafilatura.fetch_url(fetch_url)
         if not downloaded:
             return {"error": "Failed to fetch URL"}
 
