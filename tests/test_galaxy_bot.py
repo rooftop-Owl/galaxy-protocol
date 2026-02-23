@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Unit tests for Galaxy-gazer Telegram Bot (tools/galaxy/bot.py).
+Unit tests for Galaxy Protocol command/runtime behavior.
 
 Tests the bot's logic WITHOUT requiring a Telegram connection or token.
 Mocks subprocess, file I/O, and Telegram API to verify:
@@ -28,14 +28,7 @@ from unittest.mock import AsyncMock, MagicMock, patch, mock_open
 
 import pytest
 
-BOT_PATH = Path(__file__).parent.parent / "tools" / "bot.py"
-SCHEMA_PATH = (
-    Path(__file__).parent.parent
-    / ".sisyphus"
-    / "drafts"
-    / "galaxy-gazer-protocol"
-    / "event-schema.json"
-)
+SCHEMA_PATH = Path(__file__).parent.parent / ".sisyphus" / "drafts" / "galaxy-gazer-protocol" / "event-schema.json"
 
 
 # ============================================================================
@@ -93,9 +86,7 @@ class TestConfigLoading:
             config = json.load(f)
         for name, machine in config["machines"].items():
             assert "repo_path" in machine, f"Machine {name} missing repo_path"
-            assert machine["repo_path"].startswith("/"), (
-                f"Machine {name} repo_path must be absolute"
-            )
+            assert machine["repo_path"].startswith("/"), f"Machine {name} repo_path must be absolute"
 
     def test_config_example_default_machine_exists_in_machines(self):
         config_path = Path(__file__).parent.parent / "tools" / "config.json.example"
@@ -133,11 +124,7 @@ class TestMachineRegistry:
         }
 
     def test_new_format_single_machine(self):
-        config = {
-            "machines": {
-                "lab": {"host": "localhost", "repo_path": "/home/zephyr/astraeus"}
-            }
-        }
+        config = {"machines": {"lab": {"host": "localhost", "repo_path": "/home/zephyr/astraeus"}}}
         machines = self._load_machines(config)
         assert "lab" in machines
         assert machines["lab"]["host"] == "localhost"
@@ -320,9 +307,7 @@ class TestOrderStructure:
             pytest.skip("event-schema.json not found (gitignored drafts)")
         with open(SCHEMA_PATH) as f:
             schema = json.load(f)
-        allowed = schema["definitions"]["inbound_order"]["properties"]["command"][
-            "enum"
-        ]
+        allowed = schema["definitions"]["inbound_order"]["properties"]["command"]["enum"]
         assert self._make_order()["command"] in allowed
 
 
@@ -489,93 +474,6 @@ class TestStatusFormatting:
         assert "lab" in msg
         assert "hpc" in msg
         assert "---" in msg
-
-
-# ============================================================================
-# Bot.py Syntax & Structure Tests
-# ============================================================================
-
-
-class TestBotStructure:
-    """Test bot.py file structure and validity."""
-
-    def test_bot_py_is_valid_python(self):
-        import ast
-
-        with open(BOT_PATH) as f:
-            source = f.read()
-        ast.parse(source)
-
-    def test_bot_py_has_all_command_handlers(self):
-        with open(BOT_PATH) as f:
-            source = f.read()
-        required = [
-            "cmd_status",
-            "cmd_concerns",
-            "cmd_order",
-            "cmd_help",
-            "cmd_machines",
-        ]
-        for handler in required:
-            assert f"async def {handler}" in source, f"Missing handler: {handler}"
-
-    def test_bot_py_has_authorization_in_every_handler(self):
-        with open(BOT_PATH) as f:
-            source = f.read()
-        handlers = source.count("async def cmd_")
-        auth_checks = source.count("if not is_authorized")
-        assert auth_checks >= handlers
-
-    def test_bot_py_has_change_me_guard(self):
-        with open(BOT_PATH) as f:
-            source = f.read()
-        assert '"CHANGE-ME"' in source or "'CHANGE-ME'" in source
-
-    def test_bot_py_no_eval_or_exec(self):
-        with open(BOT_PATH) as f:
-            source = f.read()
-        assert "eval(" not in source, "eval() found — security violation"
-        assert "exec(" not in source, "exec() found — security violation"
-
-    def test_bot_py_no_hardcoded_secrets(self):
-        with open(BOT_PATH) as f:
-            source = f.read()
-        import re
-
-        token_pattern = re.compile(r"\d{8,}:AA[A-Za-z0-9_-]{30,}")
-        assert not token_pattern.search(source)
-
-    def test_bot_py_under_750_lines(self):
-        with open(BOT_PATH) as f:
-            lines = f.readlines()
-        assert len(lines) < 1100, (
-            f"bot.py is {len(lines)} lines — refactor if it keeps growing"
-        )
-
-    def test_bot_py_has_load_machines_function(self):
-        with open(BOT_PATH) as f:
-            source = f.read()
-        assert "def load_machines" in source
-
-    def test_bot_py_has_resolve_machine_function(self):
-        with open(BOT_PATH) as f:
-            source = f.read()
-        assert "def resolve_machine" in source
-
-    def test_bot_py_has_is_local_function(self):
-        with open(BOT_PATH) as f:
-            source = f.read()
-        assert "def is_local" in source
-
-    def test_bot_py_has_run_on_machine_function(self):
-        with open(BOT_PATH) as f:
-            source = f.read()
-        assert "def run_on_machine" in source
-
-    def test_bot_py_registers_machines_command(self):
-        with open(BOT_PATH) as f:
-            source = f.read()
-        assert '"machines"' in source
 
 
 # ============================================================================

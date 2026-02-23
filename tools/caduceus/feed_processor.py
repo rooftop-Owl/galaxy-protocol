@@ -409,12 +409,13 @@ def _build_enrichment_prompt(repo_url: str, owner: str, repo: str, reference_pat
         "TASK:\n"
         "1) Use DeepWiki MCP tools to analyze the repository architecture and workflows.\n"
         "2) Edit the reference file in place.\n"
-        "3) Replace placeholder text in these sections with concrete content:\n"
+        "3) Do NOT run git add, git commit, git push, or any git-history operation.\n"
+        "4) Replace placeholder text in these sections with concrete content:\n"
         f"   - Relevance placeholder: {RELEVANCE_PLACEHOLDER}\n"
         f"   - Patterns placeholder: {PATTERNS_PLACEHOLDER}\n"
-        "4) Keep metadata header and existing Summary/Key Insights sections intact.\n"
-        "5) Keep the document concise and actionable.\n"
-        "6) If analysis is impossible, explain why in your final response and exit non-zero.\n"
+        "5) Keep metadata header and existing Summary/Key Insights sections intact.\n"
+        "6) Keep the document concise and actionable.\n"
+        "7) If analysis is impossible, explain why in your final response and exit non-zero.\n"
     )
 
 
