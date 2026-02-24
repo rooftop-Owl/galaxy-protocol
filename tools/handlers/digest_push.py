@@ -182,6 +182,38 @@ def _build_fallback_digest_payload(
     }
 
 
+def _build_live_digest_payload(
+    new_refs: list[dict[str, Any]],
+    last_date: str | None,
+) -> dict[str, Any]:
+    tags = Counter()
+    for ref in new_refs:
+        raw_tags = ref.get("tags", [])
+        if isinstance(raw_tags, list):
+            for tag in raw_tags:
+                if isinstance(tag, str) and tag.strip():
+                    tags[tag.strip()] += 1
+
+    pattern_names = [f"Tag signal: {tag}" for tag, _ in tags.most_common(3)]
+    if not pattern_names:
+        pattern_names = ["Reference intake trend"]
+
+    patterns = [{"name": name} for name in pattern_names]
+    references = [{"title": str(ref.get("title", _slug_from_reference(ref)))} for ref in new_refs]
+
+    if last_date:
+        action_desc = f"Auto-digest summary refreshed for refs captured since {last_date}."
+    else:
+        action_desc = "Auto-digest summary refreshed from the full reference backlog."
+
+    return {
+        "digest_date": _today_kst(),
+        "patterns": patterns,
+        "references": references,
+        "actions": [{"description": action_desc}],
+    }
+
+
 def _create_fallback_digest(
     last_digest_date: str | None,
     new_refs: list[dict[str, Any]],
@@ -466,8 +498,11 @@ async def send_daily_digest(bot, config, digest_loader):
         digest_data = {"patterns": [], "references": [], "actions": []}
 
     digest_date = digest_data.get("digest_date")
-    if new_count >= min_refs and (not created or digest_date == last_date or _is_stub_reference_summary(digest_data)):
-        digest_data = _build_fallback_digest_payload(new_refs, last_date)
+    if new_count >= min_refs:
+        if not created:
+            digest_data = _build_fallback_digest_payload(new_refs, last_date)
+        elif digest_date == last_date or _is_stub_reference_summary(digest_data):
+            digest_data = _build_live_digest_payload(new_refs, last_date)
 
     message = format_digest_message(digest_data)
     subscribers = config.get("digest_push", {}).get("digest_subscribers", [])

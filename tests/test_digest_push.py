@@ -148,3 +148,38 @@ async def test_send_daily_digest_uses_live_payload_when_auto_create_stays_stale(
     assert "Ref Alpha" in sent_text
     assert "Ref Beta" in sent_text
     assert "stale digest summary" not in sent_text
+
+
+@pytest.mark.asyncio
+async def test_send_daily_digest_uses_live_payload_when_auto_create_succeeds_but_loader_is_stub(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _seed_indexes(tmp_path)
+
+    async def _always_succeed(_):
+        return True
+
+    monkeypatch.setattr(digest_push, "_attempt_agent_digest_creation", _always_succeed)
+
+    bot = AsyncMock()
+    config = {
+        "features": {"GALAXY_DIGEST_PUSH_ENABLED": True},
+        "digest_push": {
+            "min_refs_for_auto_digest": 1,
+            "digest_subscribers": [1791247114],
+        },
+    }
+
+    def stub_loader():
+        return {
+            "patterns": [],
+            "references": [{"title": "3 references processed (2026-02-23)"}],
+            "actions": [],
+        }
+
+    await digest_push.send_daily_digest(bot, config, stub_loader)
+
+    assert bot.send_message.await_count >= 1
+    sent_text = bot.send_message.await_args.kwargs["text"]
+    assert "Ref Alpha" in sent_text
+    assert "Ref Beta" in sent_text
+    assert "Auto-digest fallback used" not in sent_text
