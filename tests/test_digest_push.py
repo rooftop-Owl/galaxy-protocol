@@ -183,3 +183,73 @@ async def test_send_daily_digest_uses_live_payload_when_auto_create_succeeds_but
     assert "Ref Alpha" in sent_text
     assert "Ref Beta" in sent_text
     assert "Auto-digest fallback used" not in sent_text
+
+
+def test_new_refs_after_same_day_digest_are_detected(tmp_path, monkeypatch):
+    """Regression: refs added later on the same UTC day as the last digest
+    must not be invisible to _get_new_refs.
+
+    Scenario that triggered the bug:
+    - Digest created at 09:03 KST = 00:03 UTC on date X
+    - User feeds refs at 17-18 UTC on date X  (= 02-03 AM KST next day)
+    - _get_new_refs used cutoff = date + 'T23:59:59Z', so refs were excluded
+    - Today's 9 AM scheduler fires, finds 0 new refs, skips digest
+    """
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".sisyphus/digests").mkdir(parents=True)
+    (tmp_path / ".sisyphus/references").mkdir(parents=True)
+
+    # Last digest covered refs up to 00:30 UTC on 2026-02-24
+    digests_index = {
+        "digests": [
+            {
+                "date": "2026-02-24",
+                "file": "digest-2026-02-24.md",
+                "refs_slugs": ["early-ref"],
+                "refs_processed": 1,
+            }
+        ]
+    }
+    (tmp_path / ".sisyphus/digests/index.json").write_text(
+        json.dumps(digests_index), encoding="utf-8"
+    )
+    (tmp_path / ".sisyphus/digests/digest-2026-02-24.md").write_text(
+        "# Digest: 2026-02-24\n\n## 6. References Processed\n- `early-ref`\n",
+        encoding="utf-8",
+    )
+
+    # References: early-ref (covered by digest at 00:30 UTC) and two late-refs
+    # added at 17:xx and 18:xx UTC — same calendar day, after the digest
+    references_index = {
+        "references": [
+            {
+                "file": "early-ref.md",
+                "title": "Early Ref",
+                "shared_at": "2026-02-24T00:30:00Z",
+            },
+            {
+                "file": "late-ref-one.md",
+                "title": "Late Ref One",
+                "shared_at": "2026-02-24T17:49:00Z",
+            },
+            {
+                "file": "late-ref-two.md",
+                "title": "Late Ref Two",
+                "shared_at": "2026-02-24T18:40:00Z",
+            },
+        ],
+        "digests": [],
+    }
+    (tmp_path / ".sisyphus/references/index.json").write_text(
+        json.dumps(references_index), encoding="utf-8"
+    )
+
+    cutoff = digest_push._get_last_digest_cutoff_ts()
+    # Cutoff must be the max shared_at of the covered ref (00:30 UTC), not midnight
+    assert cutoff == "2026-02-24T00:30:00Z"
+
+    new_refs = digest_push._get_new_refs(cutoff)
+    titles = [r["title"] for r in new_refs]
+    assert "Late Ref One" in titles, "Late ref added after digest was missed"
+    assert "Late Ref Two" in titles, "Late ref added after digest was missed"
+    assert "Early Ref" not in titles, "Early ref should not be reprocessed"

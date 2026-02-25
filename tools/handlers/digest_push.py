@@ -66,22 +66,72 @@ def _get_last_digest_date() -> str | None:
         return None
 
 
-def _get_new_refs(since_date: str | None) -> list[dict[str, Any]]:
+def _get_last_digest_cutoff_ts() -> str | None:
+    """Return the ISO timestamp after which refs are considered new.
+
+    Uses the max ``shared_at`` of refs actually included in the last digest
+    rather than midnight of the digest date.  This prevents refs added later
+    on the same UTC calendar day from being silently dropped.
+
+    Resolution order:
+    1. ``cutoff_ts`` stored in the digest index entry (written by newer code).
+    2. Derived: ``max(shared_at)`` of refs whose slugs are in ``refs_slugs``.
+    3. Legacy fallback: ``date + "T23:59:59Z"`` (same-day midnight).
+    """
+    index_path = Path(".sisyphus/digests/index.json")
+    data = _load_json(index_path)
+    if not isinstance(data, dict):
+        return None
+
+    digests = data.get("digests", [])
+    if not isinstance(digests, list) or not digests:
+        return None
+
+    try:
+        latest = sorted(digests, key=lambda d: d.get("date", ""), reverse=True)[0]
+    except Exception:
+        return None
+
+    # Fast path: cutoff_ts stored by newer digest creation code
+    cutoff_ts = latest.get("cutoff_ts")
+    if isinstance(cutoff_ts, str) and cutoff_ts:
+        return cutoff_ts
+
+    # Derive from refs_slugs: max shared_at of refs that were processed
+    refs_slugs = set(latest.get("refs_slugs", []))
+    if refs_slugs:
+        refs_data = _load_references_index()
+        included_times = [
+            r["shared_at"]
+            for r in refs_data.get("references", [])
+            if isinstance(r, dict)
+            and r.get("shared_at")
+            and _slug_from_reference(r) in refs_slugs
+        ]
+        if included_times:
+            return max(included_times)
+
+    # Legacy fallback: midnight of digest date
+    date = latest.get("date")
+    if date:
+        return date + "T23:59:59Z"
+    return None
+
+def _get_new_refs(since_cutoff: str | None) -> list[dict[str, Any]]:
     data = _load_references_index()
     refs = data.get("references", [])
     if not isinstance(refs, list):
         return []
 
-    if since_date is None:
+    if since_cutoff is None:
         return sorted(refs, key=lambda ref: ref.get("shared_at", ""))
 
-    cutoff = since_date + "T23:59:59Z"
-    new_refs = [ref for ref in refs if isinstance(ref, dict) and ref.get("shared_at", "") > cutoff]
+    new_refs = [ref for ref in refs if isinstance(ref, dict) and ref.get("shared_at", "") > since_cutoff]
     return sorted(new_refs, key=lambda ref: ref.get("shared_at", ""))
 
 
-def _count_new_refs(since_date: str | None) -> int:
-    return len(_get_new_refs(since_date))
+def _count_new_refs(since_cutoff: str | None) -> int:
+    return len(_get_new_refs(since_cutoff))
 
 
 def _slug_from_reference(ref: dict[str, Any]) -> str:
@@ -344,12 +394,14 @@ def _create_fallback_digest(
 
     digest_rel_path = f".sisyphus/digests/{digest_filename}"
     digests = [d for d in digests if isinstance(d, dict) and d.get("digest_file") != digest_rel_path]
+    cutoff_ts = max((r.get("shared_at", "") for r in new_refs), default="") or None
     digests.append(
         {
             "date": today,
             "refs_processed": len(refs_slugs),
             "refs_slugs": refs_slugs,
             "digest_file": digest_rel_path,
+            **({"cutoff_ts": cutoff_ts} if cutoff_ts else {}),
         }
     )
     digests.sort(key=lambda d: (d.get("date", ""), d.get("digest_file", "")))
@@ -483,7 +535,8 @@ def _is_stub_reference_summary(digest_data: dict[str, Any]) -> bool:
 async def send_daily_digest(bot, config, digest_loader):
     min_refs = config.get("digest_push", {}).get("min_refs_for_auto_digest", MIN_REFS_FOR_AUTO_DIGEST)
     last_date = _get_last_digest_date()
-    new_refs = _get_new_refs(last_date)
+    last_cutoff = _get_last_digest_cutoff_ts()
+    new_refs = _get_new_refs(last_cutoff)
     new_count = len(new_refs)
 
     created = False
